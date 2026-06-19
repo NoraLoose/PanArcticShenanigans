@@ -20,7 +20,7 @@
 #     cache. Keep the date range short (below) on a first run.
 
 using Pkg
-Pkg.activate("../")
+Pkg.activate(".")
 
 # Upload packages
 

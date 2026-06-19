@@ -1,0 +1,17 @@
+[deps]
+Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+CopernicusMarine = "cd43e856-93a3-40c8-bc9e-6146cdce14fa"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
+Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+SixelTerm = "65edfddc-f399-4499-8369-a1bd38eee2ea"
+
+[sources]
+NumericalEarth = {rev = "main", url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"}
+Oceananigans = {rev = "ss/open-boundary-conditions", url = "https://github.com/CliMA/Oceananigans.jl.git"}
+
+[compat]
+julia = "1.10"
