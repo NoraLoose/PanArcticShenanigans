@@ -27,7 +27,7 @@ Pkg.activate(".")
 DEPOT_PATH
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
-using Oceananigans.BoundaryConditions: Radiation, FlatherBoundaryCondition, NormalFlowBoundaryCondition
+using Oceananigans.BoundaryConditions: NormalRadiation, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
 using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid
@@ -97,7 +97,7 @@ grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height); a
 
 using CairoMakie, SixelTerm
 
-h_bottom = Array(interior(grid.immersed_boundary.bottom_height, :, :, 1))
+h_bottom = Array(interior(bottom_height, :, :, 1))
 h_bottom[h_bottom .≥ 0] .= NaN
 
 fig = Figure(size = (700, 600))
@@ -181,21 +181,21 @@ mp4_html("arctic_free_surface.mp4")
 @inline north_v_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny+1, k, Oceananigans.Units.Time(clock.time)]
 nothing #hide
 
-# Radiation timescales à la Marchesiello: 1 day on inflow, infinite on outflow. The normal velocity (`v`) and
+# NormalRadiation timescales à la Marchesiello: 1 day on inflow, infinite on outflow. The normal velocity (`v`) and
 # the tracers are open on south and north; `u` (normal to the closed east/west walls) keeps its default
 # condition:
 
 v_obcs = FieldBoundaryConditions(
-    south = NormalFlowBoundaryCondition(south_obc,   discrete_form = true, parameters = vᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)),
-    north = NormalFlowBoundaryCondition(north_v_obc, discrete_form = true, parameters = vᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)))
+    south = NormalFlowBoundaryCondition(south_obc,   discrete_form = true, parameters = vᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
+    north = NormalFlowBoundaryCondition(north_v_obc, discrete_form = true, parameters = vᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
 
 T_obcs = FieldBoundaryConditions(
-    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)),
-    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)))
+    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
+    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
 
 S_obcs = FieldBoundaryConditions(
-    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)),
-    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)))
+    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
+    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
 
 # The Flather condition acts on the barotropic transport `V` with external state `(∫vᵉˣᵗ dz, ηᵉˣᵗ)`,
 # `immersed_peripheral_node` skipping solid cells so the integral is the wet-column transport. Only south and
@@ -227,8 +227,8 @@ end
 end
 
 V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
-    south = FlatherBoundaryCondition(south_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)),
-    north = FlatherBoundaryCondition(north_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)))
+    south = GravityWaveRadiationBoundaryCondition(south_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)),
+    north = GravityWaveRadiationBoundaryCondition(north_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)))
 
 # ## ... and a sponge behind them
 #
@@ -289,7 +289,7 @@ set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date=dates[1], dataset
 
 atmosphere    = JRA55PrescribedAtmosphere(arch; dir_kw...)
 radiation     = JRA55PrescribedRadiation(arch; dir_kw...)
-land          = JRA55PrescribedLand(arch; dir_kw...)
+land          = JRA55PrescribedLand(grid; dir_kw...)
 coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation)
 
 # A short run — a handful of hours — just to see whether the boundaries hold and the fields stay finite.
@@ -335,12 +335,12 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
                                             filename = "arctic_ocean_surface.jld2",
                                             indices = (:, :, grid.Nz-2),
                                             schedule = TimeInterval(1hours),
-                                            overwrite_existing = true)
+                                            overwrite_files = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                               filename = "arctic_sea_ice_surface.jld2",
                                               schedule = TimeInterval(1hours),
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # The big red button:
 
