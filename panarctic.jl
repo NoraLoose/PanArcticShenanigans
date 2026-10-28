@@ -1,6 +1,6 @@
 # # The Arctic Ocean: a pan-Arctic coupled ocean–sea ice simulation
 #
-# *A short regional test of a pan-Arctic domain on a rotated grid.*
+# *A short regional test of a pan-Arctic domain on a rotated or polar-stereographic grid.*
 #
 # !!! warning "This is a *test* configuration"
 #     The default config runs 0.15° for 10 days (see `config.toml`). The goal is to
@@ -22,9 +22,12 @@ DEPOT_PATH
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
 using Oceananigans.BoundaryConditions: NormalRadiation, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
-using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
+using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ, intrinsic_vector
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Architectures: on_architecture
+using NumericalEarth.DataWrangling: DatasetRestoring, UVelocity, VVelocity
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
-using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid
+using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid, LambertConformalConicGrid
 using Dates, CUDA, Printf
 using CopernicusMarine   # enables the GLORYS download extension
 using TOML
@@ -42,45 +45,67 @@ config = TOML.parsefile(config_file)
 
 arch = config["architecture"] == "GPU" ? GPU() : CPU()
 
-# ## A rotated pan-Arctic grid
+# ## A pan-Arctic grid
 #
 # A plain `LatitudeLongitudeGrid` **cannot contain the North Pole**: 90°N is a coordinate singularity and cell
-# areas collapse toward it (usable only to ~84°N). We instead use a `RotatedLatitudeLongitudeGrid`, which is
-# the *same* structured, `Bounded` lat–lon machinery (so the open-boundary, Flather and sponge code below
-# still applies) but with the singular grid pole **moved off the domain**.
+# areas collapse toward it. Two grids avoid it; `[grid] type` in the config picks one. Both have the open
+# boundaries on the **south** edge (j = 1, North Atlantic) and the **north** edge (j = Ny, Pacific/Bering
+# side), while the **east/west** edges fall on land and stay closed walls. So the boundary conditions and the
+# sponge below work on either grid.
 #
-# We put the grid's north pole on the geographic equator (`north_pole = (λ₀, 0)`): keeping the latitude at 0
-# centres the box on the geographic North Pole, and the longitude `λ₀` simply **spins the cap about the pole**.
-# We orient it so the two ocean gateways land on the *meridional* edges — the **south** edge on the Atlantic
-# (limited to ~50°N) and the **north** edge across the Bering Sea — while the **east/west** edges fall on land.
-# `longitude`/`latitude` below are in this **rotated frame**.
+# **`"rotated"`** — a `RotatedLatitudeLongitudeGrid`: the same structured lat–lon machinery, with the grid's
+# north pole moved onto the geographic equator (`north_pole = (λ₀, 0)`), which centres the box on the
+# geographic North Pole; `λ₀` spins the cap about the pole. `longitude`/`latitude` are in the rotated frame.
+# With the pole on the equator an edge midpoint sits near geographic latitude `90 − |φ|`: lower `φ₂` to pull
+# the north edge in from the open Pacific (e.g. `30` → ~60°N), raise `φ₁` to pull the south edge back from
+# the deep Atlantic (e.g. `-30` → ~60°N). Spacing is set in degrees (`resolution`).
 #
-# !!! tip "Tune the rotation from the diagnostic"
-#     With the pole on the equator (`φ_p = 0`) the cap is centred on the North Pole and an edge midpoint sits
-#     near geographic latitude `90 − |φ|`. So `λ₀` spins the cap, while `φ₁`/`φ₂` set how far the south/north
-#     edges reach: lower `φ₂` to pull the **north** edge in from the open Pacific (e.g. `30` → ~60°N, across
-#     the Bering Sea), raise `φ₁` to pull the **south** edge back from the deep Atlantic (e.g. `-30` → ~60°N).
-#     Run the grid + bathymetry + edge-coordinate cells below (cheap — no GLORYS) to check after each change.
+# **`"stereographic"`** — a `LambertConformalConicGrid` with `standard_parallel = latitude_of_origin = 90`,
+# i.e. a polar-stereographic projection centred on the North Pole. The central meridian λ₀ = -40°
+# (mid-Atlantic) puts the south edge across the North Atlantic (~54°N) and the north edge across the
+# Pacific/Bering sector. The grid is regular in projected (x, y); the physical spacing is
+# `spacing × (1 + sinφ) / 2`: the full `spacing` at the pole, 10–15% finer along the south edge. Spacing is set
+# in km (`spacing_km`).
+#
+# Check the bathymetry figure after changing either grid: both open edges should lie over open water.
 
-const λ₁, λ₂ = 151, 212   # rotated longitude (east ↔ west edges → continents)
-const φ₁, φ₂ = -34.8, 27  # rotated latitude: south = Atlantic (~50°N) ↔ north (cuts across Bering Sea)
+grid_type = config["grid"]["type"]
+Nz        = config["grid"]["Nz"]
+depth     = config["grid"]["depth"] * meters
+z         = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
 
-res = config["grid"]["resolution"]
+if grid_type == "rotated"
+    λ₁, λ₂ = 151, 212     # rotated longitude (east ↔ west edges → continents)
+    φ₁, φ₂ = -34.8, 27    # rotated latitude: south = Atlantic (~50°N) ↔ north (cuts across Bering Sea)
+    res    = config["grid"]["rotated"]["resolution"]
+    underlying_grid = RotatedLatitudeLongitudeGrid(arch;
+                                                   size       = (round(Int, (λ₂ - λ₁) / res), round(Int, (φ₂ - φ₁) / res), Nz),
+                                                   longitude  = (λ₁, λ₂),
+                                                   latitude   = (φ₁, φ₂),
+                                                   north_pole = (145, 0),   # λ₀: spin the cap (south=Atlantic, north=Bering)
+                                                   z,
+                                                   halo = (7, 7, 7))
+    φ_south = 45          # southern limit of the GLORYS download (as before; the grid's corners reach 44.2°N)
+elseif grid_type == "stereographic"
+    x₁, x₂  = -3280e3, 3616e3   # west–east projected extent (m)
+    y₁, y₂  = -4100e3, 2700e3   # south–north projected extent (m)
+    spacing = config["grid"]["stereographic"]["spacing_km"] * kilometers
+    underlying_grid = LambertConformalConicGrid(arch;
+                                                size               = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
+                                                x                  = (x₁, x₂),
+                                                y                  = (y₁, y₂),
+                                                central_longitude  = -40,   # λ₀: mid-Atlantic
+                                                standard_parallel  = 90,
+                                                latitude_of_origin = 90,
+                                                z,
+                                                halo = (7, 7, 7))
+    φ_south = 43          # southern limit of the GLORYS download (the south edge reaches 43.6°N at its ends)
+else
+    error("Unknown grid type \"$grid_type\"; use \"rotated\" or \"stereographic\"")
+end
 
-Nx  = round(Int, (λ₂ - λ₁) / res)
-Ny  = round(Int, (φ₂ - φ₁) / res)
-Nz  = config["grid"]["Nz"]
-
-depth = 4000meters
-z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
-
-underlying_grid = RotatedLatitudeLongitudeGrid(arch;
-                                               size       = (Nx, Ny, Nz),
-                                               longitude  = (λ₁, λ₂),
-                                               latitude   = (φ₁, φ₂),
-                                               north_pole = (145, 0),   # λ₀: spin the cap (south=Atlantic, north=Bering)
-                                               z,
-                                               halo = (7, 7, 7))
+Nx, Ny = size(underlying_grid)[1:2]
+@info "Grid: $grid_type, $Nx × $Ny × $Nz"
 
 # Downloads land in `data_dir` from the config, or in each product's default cache when that is empty.
 # Output goes to `output_dir`:
@@ -106,16 +131,16 @@ h_bottom[h_bottom .≥ 0] .= NaN
 
 if make_figures
     fig = Figure(size = (700, 600))
-    ax = Axis(fig[1, 1], xlabel = "grid i (rotated)", ylabel = "grid j (rotated)",
-              title = "Arctic bathymetry (rotated grid)", aspect = DataAspect())
+    ax = Axis(fig[1, 1], xlabel = "grid i", ylabel = "grid j",
+              title = "Arctic bathymetry ($grid_type grid)", aspect = DataAspect())
     hm = heatmap!(ax, h_bottom, colormap = :deep, colorrange = (-depth, 0), nan_color = :gray80)
     Colorbar(fig[1, 2], hm, label = "bottom height [m]")
 
     save(joinpath(output_dir, "bathymetry.png"), fig)
 end
 
-# The grid spacing varies across the rotated cap. `xspacings`/`yspacings` at cell centres return the metric
-# (in metres) as 2D arrays — heatmap them in km to see where the grid is finest/coarsest and how the rotation
+# The grid spacing varies across the cap. `xspacings`/`yspacings` at cell centres return the metric
+# (in metres) as 2D arrays — heatmap them in km to see where the grid is finest/coarsest and how the projection
 # distorts it:
 
 # (`xspacings`/`yspacings` return a lazy `KernelFunctionOperation`; wrap in a `Field` + `compute!` so we get a
@@ -142,21 +167,12 @@ end
 # ## Open boundary conditions from GLORYS12
 #
 # Same recipe as the Barents tutorial — Flather (1976) for the barotropic mode, Orlanski/Marchesiello
-# radiation for baroclinic velocities and tracers — opened on the two meridional gateways: the **south** edge
-# (the Atlantic, down to ~50°N) and the **north** edge (across the Bering Sea). The **east** and **west** edges
-# fall on land (the Bering Strait archipelago / continental coasts) and stay closed walls. Both open edges are
-# fed by GLORYS12; the data is cropped to the cap.
-#
-# !!! warning "Velocity components on a rotated grid"
-#     GLORYS `u`/`v` are geographic **east/north** components, while the normal-flow and Flather conditions
-#     expect velocities along the **rotated grid** axes. On this rotated grid the two frames differ, so the
-#     velocity boundary conditions may be mis-oriented until the components are rotated into the grid frame.
-#     The tracer (`T`, `S`) and free-surface (`η`) conditions are unaffected (scalars). The north/south normal
-#     velocity is the grid-`v`, fed from GLORYS `v_velocity` — treat this as the main thing to validate.
+# radiation for baroclinic velocities and tracers — opened on the south (Atlantic) and north (Pacific/Bering)
+# edges. Both open edges are fed by GLORYS12, cropped to the latitudes the grid covers.
 
 dates   = DateTime(config["time"]["start_date"]) : Day(1) : DateTime(config["time"]["end_date"])
 dataset = GLORYSDaily()
-region  = BoundingBox(longitude = (-180, 180), latitude = (45, 90))
+region  = BoundingBox(longitude = (-180, 180), latitude = (φ_south, 90))
 
 # T and S use NumericalEarth's default inpainting, which fills every gap in GLORYS. A capped number of passes
 # (e.g. `inpainting=100`) leaves zeros below GLORYS's sea floor in enclosed deep basins such as Baffin Bay;
@@ -167,7 +183,24 @@ Sᵉˣᵗ = FieldTimeSeries(Metadata(:salinity;     dates, dataset, region, dir_
 uᵉˣᵗ = FieldTimeSeries(Metadata(:u_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 vᵉˣᵗ = FieldTimeSeries(Metadata(:v_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 ηᵉˣᵗ = FieldTimeSeries(Metadata(:free_surface; dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
-nothing #hide
+
+# GLORYS `u`/`v` are geographic **east/north** components, but the model's `u`/`v` point along the grid axes,
+# which on both grids are turned against east/north (on the stereographic grid by up to ~180° far from the
+# central meridian). Each snapshot is rotated into the grid frame with Oceananigans' `intrinsic_vector`, in
+# place, so the boundary conditions and the sponge below use grid-frame velocities.
+
+@inline grid_frame_u(i, j, k, grid, uₑ, vₑ) = intrinsic_vector(i, j, k, grid, uₑ, vₑ)[1]
+@inline grid_frame_v(i, j, k, grid, uₑ, vₑ) = intrinsic_vector(i, j, k, grid, uₑ, vₑ)[2]
+
+for n in eachindex(uᵉˣᵗ.times)
+    uₙ, vₙ = uᵉˣᵗ[n], vᵉˣᵗ[n]
+    uᵍ = compute!(Field(KernelFunctionOperation{Center, Center, Center}(grid_frame_u, grid, uₙ, vₙ)))
+    vᵍ = compute!(Field(KernelFunctionOperation{Center, Center, Center}(grid_frame_v, grid, uₙ, vₙ)))
+    interior(uₙ) .= interior(uᵍ)
+    interior(vₙ) .= interior(vᵍ)
+    fill_halo_regions!((uₙ, vₙ))
+end
+@info "Rotated GLORYS velocities into the grid frame"
 
 # A quick look at the external free surface (again in grid-index space):
 
@@ -179,7 +212,7 @@ if make_movies
         η
     end
     fig = Figure(size = (700, 600))
-    ax  = Axis(fig[1, 1], xlabel = "grid i (rotated)", ylabel = "grid j (rotated)",
+    ax  = Axis(fig[1, 1], xlabel = "grid i", ylabel = "grid j",
                title = "GLORYS free surface", aspect = DataAspect())
     hm  = heatmap!(ax, ηv, colormap = :balance, colorrange = (-1.5, 0.2), nan_color = :gray80)
     Colorbar(fig[1, 2], hm, label = "Free surface [m]")
@@ -247,8 +280,8 @@ V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
 
 # ## ... and a sponge behind them
 #
-# The sponge restores toward GLORYS in a thin rim just inside the open edges. On a rotated grid the geographic
-# `(λ, φ)` are no longer aligned with the box edges, so instead of an analytic mask of `(λ, φ)` we build the
+# The sponge restores toward GLORYS in a thin rim just inside the open edges. On both grids the geographic
+# `(λ, φ)` are not aligned with the box edges, so instead of an analytic mask of `(λ, φ)` we build the
 # mask in **grid-index space**: a Gaussian rim that is 1 on the open **south/north** edges and decays a few
 # cells inward (no rim on the closed east/west walls). `DatasetRestoring` accepts a plain array mask (indexed
 # by `i, j, k`):
@@ -264,8 +297,9 @@ end
 # near-boundary interior stays matched to the prescribed boundary:
 
 FT = DatasetRestoring(Metadata(:temperature; dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
-Fu = DatasetRestoring(Metadata(:u_velocity;  dates, dataset, region, dir_kw...), grid; rate = 1/20minutes, mask = sponge_mask, inpainting=100)
-Fv = DatasetRestoring(Metadata(:v_velocity;  dates, dataset, region, dir_kw...), grid; rate = 1/20minutes, mask = sponge_mask, inpainting=100)
+# The velocity sponge reuses the (possibly rotated) boundary data `uᵉˣᵗ`/`vᵉˣᵗ` rather than loading GLORYS again:
+Fu = DatasetRestoring(uᵉˣᵗ, nothing, on_architecture(arch, sponge_mask), UVelocity(), 1/20minutes)
+Fv = DatasetRestoring(vᵉˣᵗ, nothing, on_architecture(arch, sponge_mask), VVelocity(), 1/20minutes)
 FS = DatasetRestoring(Metadata(:salinity;    dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
 
 # ## The ocean component
