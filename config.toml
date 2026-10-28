@@ -9,15 +9,12 @@
 architecture = "GPU"   # "GPU" or "CPU"
 
 [grid]
-type  = "stereographic"   # "stereographic" (polar stereographic) or "rotated" (rotated lat-lon)
-Nz    = 20          # vertical levels
-depth = 4000        # maximum depth (m)
-
-[grid.rotated]
-resolution = 0.15   # degrees on the rotated grid
-
-[grid.stereographic]
-spacing_km = 15     # spacing at the pole; 10–15% finer along the south edge
+type       = "stereographic"   # "stereographic" (polar stereographic) or "rotated" (rotated lat-lon)
+spacing_km = 15     # largest horizontal grid spacing [km], used by both grid types:
+                    #   stereographic: at the pole; 10–15% finer along the south edge
+                    #   rotated: Δy everywhere (15 km ≈ 0.135°); Δx up to ~18% finer near the open edges
+Nz         = 20     # vertical levels
+depth      = 5000   # maximum depth (m)
 
 [time]
 start_date = 1993-01-01   # first day of GLORYS data; also the initial condition

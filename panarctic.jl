@@ -3,7 +3,7 @@
 # *A short regional test of a pan-Arctic domain on a rotated or polar-stereographic grid.*
 #
 # !!! warning "This is a *test* configuration"
-#     The default config runs 0.15° for 10 days (see `config.toml`). The goal is to
+#     The default config runs the 15 km stereographic grid for 10 days (see `config.toml`). The goal is to
 #     shake out the grid orientation and the open-boundary plumbing — *not* to produce a validated simulation. Several
 #     choices below (the rotation, the box bounds, the velocity boundary conditions) are flagged as things to
 #     verify and tune.
@@ -58,26 +58,31 @@ arch = config["architecture"] == "GPU" ? GPU() : CPU()
 # geographic North Pole; `λ₀` spins the cap about the pole. `longitude`/`latitude` are in the rotated frame.
 # With the pole on the equator an edge midpoint sits near geographic latitude `90 − |φ|`: lower `φ₂` to pull
 # the north edge in from the open Pacific (e.g. `30` → ~60°N), raise `φ₁` to pull the south edge back from
-# the deep Atlantic (e.g. `-30` → ~60°N). Spacing is set in degrees (`resolution`).
+# the deep Atlantic (e.g. `-30` → ~60°N). The angular resolution is `spacing_km` converted to degrees
+# (15 km ≈ 0.135°), so Δy = `spacing_km` everywhere; Δx shrinks with cos(rotated latitude), up to ~18% near
+# the open edges.
 #
 # **`"stereographic"`** — a `LambertConformalConicGrid` with `standard_parallel = latitude_of_origin = 90`,
 # i.e. a polar-stereographic projection centred on the North Pole. The central meridian λ₀ = -40°
 # (mid-Atlantic) puts the south edge across the North Atlantic (~54°N) and the north edge across the
 # Pacific/Bering sector. The grid is regular in projected (x, y); the physical spacing is
-# `spacing × (1 + sinφ) / 2`: the full `spacing` at the pole, 10–15% finer along the south edge. Spacing is set
-# in km (`spacing_km`).
+# `spacing × (1 + sinφ) / 2`: the full `spacing` at the pole, 10–15% finer along the south edge.
+#
+# Both grids take the same `[grid] spacing_km` as their largest spacing, so at a given setting they have the
+# same largest spacing and nearly the same number of columns (~208k at 15 km).
 #
 # Check the bathymetry figure after changing either grid: both open edges should lie over open water.
 
 grid_type = config["grid"]["type"]
 Nz        = config["grid"]["Nz"]
 depth     = config["grid"]["depth"] * meters
+spacing   = config["grid"]["spacing_km"] * kilometers
 z         = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
 
 if grid_type == "rotated"
     λ₁, λ₂ = 151, 212     # rotated longitude (east ↔ west edges → continents)
     φ₁, φ₂ = -34.8, 27    # rotated latitude: south = Atlantic (~50°N) ↔ north (cuts across Bering Sea)
-    res    = config["grid"]["rotated"]["resolution"]
+    res    = rad2deg(spacing / Oceananigans.defaults.planet_radius)   # degrees; Δy = spacing
     underlying_grid = RotatedLatitudeLongitudeGrid(arch;
                                                    size       = (round(Int, (λ₂ - λ₁) / res), round(Int, (φ₂ - φ₁) / res), Nz),
                                                    longitude  = (λ₁, λ₂),
@@ -89,7 +94,6 @@ if grid_type == "rotated"
 elseif grid_type == "stereographic"
     x₁, x₂  = -3280e3, 3616e3   # west–east projected extent (m)
     y₁, y₂  = -4100e3, 2700e3   # south–north projected extent (m)
-    spacing = config["grid"]["stereographic"]["spacing_km"] * kilometers
     underlying_grid = LambertConformalConicGrid(arch;
                                                 size               = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
                                                 x                  = (x₁, x₂),
@@ -105,7 +109,7 @@ else
 end
 
 Nx, Ny = size(underlying_grid)[1:2]
-@info "Grid: $grid_type, $Nx × $Ny × $Nz"
+@info "Grid: $grid_type, $Nx × $Ny × $Nz, largest spacing $(spacing / 1e3) km"
 
 # Downloads land in `data_dir` from the config, or in each product's default cache when that is empty.
 # Output goes to `output_dir`:
