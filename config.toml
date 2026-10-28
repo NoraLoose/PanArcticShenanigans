@@ -17,10 +17,9 @@ Nz         = 20     # vertical levels
 depth      = 5000   # maximum depth (m)
 
 [time]
-start_date = 1993-01-01   # first day of GLORYS data; also the initial condition
-end_date   = 1993-01-06   # last day of GLORYS data loaded
+start_date = 1993-01-01   # initial condition (GLORYS and ECCO); GLORYS is loaded from here to the end of the run
 dt_minutes = 10           # time step
-stop_hours = 240          # run length (240 h = 10 days; e.g. 3 for a quick check)
+stop_hours = 120          # run length (120 h = 5 days; e.g. 3 for a quick check)
 
 [paths]
 data_dir   = ""   # where downloads are stored; "" = each dataset's default cache

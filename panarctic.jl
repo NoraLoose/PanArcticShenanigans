@@ -128,7 +128,7 @@ bottom_height = regrid_bathymetry(underlying_grid, bathymetry;
 
 grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height); active_cells_map = true)
 
-using CairoMakie, SixelTerm
+using CairoMakie
 
 h_bottom = Array(interior(bottom_height, :, :, 1))
 h_bottom[h_bottom .≥ 0] .= NaN
@@ -174,7 +174,13 @@ end
 # radiation for baroclinic velocities and tracers — opened on the south (Atlantic) and north (Pacific/Bering)
 # edges. Both open edges are fed by GLORYS12, cropped to the latitudes the grid covers.
 
-dates   = DateTime(config["time"]["start_date"]) : Day(1) : DateTime(config["time"]["end_date"])
+# The GLORYS days to load follow from the start date and the run length. GLORYS daily values are daily means
+# centred at noon, so data up to the day the run ends covers the run until 12 hours past its end. (The first
+# 12 hours, before the first noon, still borrow from the end of the record; see #4.)
+
+start_date = DateTime(config["time"]["start_date"])
+run_days   = ceil(Int, config["time"]["stop_hours"] / 24)
+dates      = start_date : Day(1) : start_date + Day(max(run_days, 1))
 dataset = GLORYSDaily()
 region  = BoundingBox(longitude = (-180, 180), latitude = (φ_south, 90))
 
