@@ -20,4 +20,8 @@ stop_hours = 240          # run length (240 h = 10 days; e.g. 3 for a quick chec
 
 [paths]
 data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
-output_dir = "."  # where output (.jld2, .mp4) is written
+output_dir = "."  # where output (.jld2, .png, .mp4) is written
+
+[output]
+figures = true    # save bathymetry.png and grid_spacing.png to output_dir
+movies  = true    # make arctic_free_surface.mp4 (GLORYS input) and arctic_sea.mp4 (results)

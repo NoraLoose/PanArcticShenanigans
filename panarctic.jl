@@ -25,7 +25,7 @@ using Oceananigans.BoundaryConditions: NormalRadiation, GravityWaveRadiationBoun
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
 using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid
-using Dates, CUDA, Printf, Base64
+using Dates, CUDA, Printf
 using CopernicusMarine   # enables the GLORYS download extension
 using TOML
 
@@ -41,12 +41,6 @@ config = TOML.parsefile(config_file)
 @info "Settings from $config_file" config
 
 arch = config["architecture"] == "GPU" ? GPU() : CPU()
-
-# A small helper to embed an mp4 inline in the notebook (self-contained, plays in JupyterLab):
-
-mp4_html(path) = HTML(string("<video autoplay loop muted playsinline controls ",
-                             "src=\"data:video/mp4;base64,", base64encode(read(path)),
-                             "\" style=\"max-width:100%\"></video>"))
 
 # ## A rotated pan-Arctic grid
 #
@@ -94,6 +88,8 @@ underlying_grid = RotatedLatitudeLongitudeGrid(arch;
 data_dir   = config["paths"]["data_dir"]
 dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
 output_dir = mkpath(config["paths"]["output_dir"])
+make_figures = config["output"]["figures"]   # bathymetry and grid-spacing PNGs
+make_movies  = config["output"]["movies"]    # GLORYS free-surface and results movies
 
 bathymetry = Metadatum(:bottom_height; dataset = ETOPO2022(), dir_kw...)
 bottom_height = regrid_bathymetry(underlying_grid, bathymetry;
@@ -108,12 +104,15 @@ using CairoMakie, SixelTerm
 h_bottom = Array(interior(bottom_height, :, :, 1))
 h_bottom[h_bottom .≥ 0] .= NaN
 
-fig = Figure(size = (700, 600))
-ax = Axis(fig[1, 1], xlabel = "grid i (rotated)", ylabel = "grid j (rotated)",
-          title = "Arctic bathymetry (rotated grid)", aspect = DataAspect())
-hm = heatmap!(ax, h_bottom, colormap = :deep, colorrange = (-depth, 0), nan_color = :gray80)
-Colorbar(fig[1, 2], hm, label = "bottom height [m]")
-fig
+if make_figures
+    fig = Figure(size = (700, 600))
+    ax = Axis(fig[1, 1], xlabel = "grid i (rotated)", ylabel = "grid j (rotated)",
+              title = "Arctic bathymetry (rotated grid)", aspect = DataAspect())
+    hm = heatmap!(ax, h_bottom, colormap = :deep, colorrange = (-depth, 0), nan_color = :gray80)
+    Colorbar(fig[1, 2], hm, label = "bottom height [m]")
+
+    save(joinpath(output_dir, "bathymetry.png"), fig)
+end
 
 # The grid spacing varies across the rotated cap. `xspacings`/`yspacings` at cell centres return the metric
 # (in metres) as 2D arrays — heatmap them in km to see where the grid is finest/coarsest and how the rotation
@@ -122,20 +121,23 @@ fig
 # (`xspacings`/`yspacings` return a lazy `KernelFunctionOperation`; wrap in a `Field` + `compute!` so we get a
 # concrete array we can pull off the GPU — `Array(::KernelFunctionOperation)` would scalar-index on the device.)
 
-Δx = Array(interior(compute!(Field(xspacings(underlying_grid, Center(), Center(), Center()))), :, :, 1)) ./ 1e3   # km
-Δy = Array(interior(compute!(Field(yspacings(underlying_grid, Center(), Center(), Center()))), :, :, 1)) ./ 1e3   # km
-dry = isnan.(h_bottom)
-Δx[dry] .= NaN
-Δy[dry] .= NaN
+if make_figures
+    Δx = Array(interior(compute!(Field(xspacings(underlying_grid, Center(), Center(), Center()))), :, :, 1)) ./ 1e3   # km
+    Δy = Array(interior(compute!(Field(yspacings(underlying_grid, Center(), Center(), Center()))), :, :, 1)) ./ 1e3   # km
+    dry = isnan.(h_bottom)
+    Δx[dry] .= NaN
+    Δy[dry] .= NaN
 
-fig = Figure(size = (1000, 450))
-ax1 = Axis(fig[1, 1], xlabel = "grid i", ylabel = "grid j", title = "Δx [km]", aspect = DataAspect())
-hm1 = heatmap!(ax1, Δx, colormap = :viridis)
-Colorbar(fig[1, 2], hm1)
-ax2 = Axis(fig[1, 3], xlabel = "grid i", title = "Δy [km]", aspect = DataAspect())
-hm2 = heatmap!(ax2, Δy, colormap = :viridis)
-Colorbar(fig[1, 4], hm2)
-fig
+    fig = Figure(size = (1000, 450))
+    ax1 = Axis(fig[1, 1], xlabel = "grid i", ylabel = "grid j", title = "Δx [km]", aspect = DataAspect())
+    hm1 = heatmap!(ax1, Δx, colormap = :viridis)
+    Colorbar(fig[1, 2], hm1)
+    ax2 = Axis(fig[1, 3], xlabel = "grid i", title = "Δy [km]", aspect = DataAspect())
+    hm2 = heatmap!(ax2, Δy, colormap = :viridis)
+    Colorbar(fig[1, 4], hm2)
+
+    save(joinpath(output_dir, "grid_spacing.png"), fig)
+end
 
 # ## Open boundary conditions from GLORYS12
 #
@@ -169,21 +171,22 @@ nothing #hide
 
 # A quick look at the external free surface (again in grid-index space):
 
-iter = Observable(1)
-ηv = @lift begin
-    η = Array(interior(ηᵉˣᵗ[$iter], :, :, 1))
-    η[isnan.(h_bottom)] .= NaN
-    η
+if make_movies
+    iter = Observable(1)
+    ηv = @lift begin
+        η = Array(interior(ηᵉˣᵗ[$iter], :, :, 1))
+        η[isnan.(h_bottom)] .= NaN
+        η
+    end
+    fig = Figure(size = (700, 600))
+    ax  = Axis(fig[1, 1], xlabel = "grid i (rotated)", ylabel = "grid j (rotated)",
+               title = "GLORYS free surface", aspect = DataAspect())
+    hm  = heatmap!(ax, ηv, colormap = :balance, colorrange = (-1.5, 0.2), nan_color = :gray80)
+    Colorbar(fig[1, 2], hm, label = "Free surface [m]")
+    CairoMakie.record(fig, joinpath(output_dir, "arctic_free_surface.mp4"), 1:length(dates), framerate = 4) do i
+        iter[] = i
+    end
 end
-fig = Figure(size = (700, 600))
-ax  = Axis(fig[1, 1], xlabel = "grid i (rotated)", ylabel = "grid j (rotated)",
-           title = "GLORYS free surface", aspect = DataAspect())
-hm  = heatmap!(ax, ηv, colormap = :balance, colorrange = (-1.5, 0.2), nan_color = :gray80)
-Colorbar(fig[1, 2], hm, label = "Free surface [m]")
-CairoMakie.record(fig, joinpath(output_dir, "arctic_free_surface.mp4"), 1:length(dates), framerate = 4) do i
-    iter[] = i
-end
-mp4_html(joinpath(output_dir, "arctic_free_surface.mp4"))
 
 # Discrete boundary functions evaluate the external `FieldTimeSeries` at the boundary index and the current
 # clock time. We need the south and north edges; `v` is the normal velocity there:
@@ -387,38 +390,39 @@ run!(simulation)
 # of integration this is a sanity check, not a climate story: look for finite, bounded fields and sensible
 # behaviour at the open edges.
 
-To = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "T")
-So = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "S")
-Uo = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "𝒱")
-hi = FieldTimeSeries(joinpath(output_dir, "arctic_sea_ice_surface.jld2"), "he")
+if make_movies
+    To = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "T")
+    So = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "S")
+    Uo = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "𝒱")
+    hi = FieldTimeSeries(joinpath(output_dir, "arctic_sea_ice_surface.jld2"), "he")
 
-times = To.times
-n = Observable(length(times))
+    times = To.times
+    n = Observable(length(times))
 
-title = @lift "Arctic — hour " * string(round(Int, times[$n] / hours))
+    title = @lift "Arctic — hour " * string(round(Int, times[$n] / hours))
 
-Tₙ = @lift(To[$n])
-Sₙ = @lift(So[$n])
-Uₙ = @lift(Uo[$n])
-hₙ = @lift(hi[$n])
+    Tₙ = @lift(To[$n])
+    Sₙ = @lift(So[$n])
+    Uₙ = @lift(Uo[$n])
+    hₙ = @lift(hi[$n])
 
-fig = Figure(size = (1100, 1000))
-fig[0, 1:4] = Label(fig, title, fontsize = 20, tellwidth = false)
+    fig = Figure(size = (1100, 1000))
+    fig[0, 1:4] = Label(fig, title, fontsize = 20, tellwidth = false)
 
-ax = Axis(fig[1, 1], ylabel = "grid j", aspect = DataAspect())
-hm_T = heatmap!(ax, Tₙ, colormap = :thermal, colorrange = (-2, 8), nan_color = :gray80)
-ax = Axis(fig[1, 3], aspect = DataAspect())
-hm_S = heatmap!(ax, Sₙ, colormap = :haline, colorrange = (32.5, 35.5), nan_color = :gray80)
-ax = Axis(fig[2, 1], xlabel = "grid i", ylabel = "grid j", aspect = DataAspect())
-hm_U = heatmap!(ax, Uₙ, colormap = Reverse(:solar), colorrange = (0, 0.5), nan_color = :gray80)
-ax = Axis(fig[2, 3], xlabel = "grid i", aspect = DataAspect())
-hm_h = heatmap!(ax, hₙ, colormap = Reverse(:blues), colorrange = (0.01, 1.5), lowclip = :gray80)
-Colorbar(fig[1, 2], hm_T, label = "SST [°C]")
-Colorbar(fig[1, 4], hm_S, label = "SSS [psu]")
-Colorbar(fig[2, 2], hm_U, label = "Surface speed [ms⁻¹]")
-Colorbar(fig[2, 4], hm_h, label = "ice volume per area [m]")
+    ax = Axis(fig[1, 1], ylabel = "grid j", aspect = DataAspect())
+    hm_T = heatmap!(ax, Tₙ, colormap = :thermal, colorrange = (-2, 8), nan_color = :gray80)
+    ax = Axis(fig[1, 3], aspect = DataAspect())
+    hm_S = heatmap!(ax, Sₙ, colormap = :haline, colorrange = (32.5, 35.5), nan_color = :gray80)
+    ax = Axis(fig[2, 1], xlabel = "grid i", ylabel = "grid j", aspect = DataAspect())
+    hm_U = heatmap!(ax, Uₙ, colormap = Reverse(:solar), colorrange = (0, 0.5), nan_color = :gray80)
+    ax = Axis(fig[2, 3], xlabel = "grid i", aspect = DataAspect())
+    hm_h = heatmap!(ax, hₙ, colormap = Reverse(:blues), colorrange = (0.01, 1.5), lowclip = :gray80)
+    Colorbar(fig[1, 2], hm_T, label = "SST [°C]")
+    Colorbar(fig[1, 4], hm_S, label = "SSS [psu]")
+    Colorbar(fig[2, 2], hm_U, label = "Surface speed [ms⁻¹]")
+    Colorbar(fig[2, 4], hm_h, label = "ice volume per area [m]")
 
-CairoMakie.record(fig, joinpath(output_dir, "arctic_sea.mp4"), 1:length(times), framerate = 4) do i
-    n[] = i
+    CairoMakie.record(fig, joinpath(output_dir, "arctic_sea.mp4"), 1:length(times), framerate = 4) do i
+        n[] = i
+    end
 end
-mp4_html(joinpath(output_dir, "panarctic.mp4"))
