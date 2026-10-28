@@ -154,7 +154,13 @@ end
 #     The tracer (`T`, `S`) and free-surface (`η`) conditions are unaffected (scalars). The north/south normal
 #     velocity is the grid-`v`, fed from GLORYS `v_velocity` — treat this as the main thing to validate.
 
-dates   = DateTime(config["time"]["start_date"]) : Day(1) : DateTime(config["time"]["end_date"])
+# The GLORYS days to load follow from the start date and the run length. GLORYS daily values are daily means
+# centred at noon, so data up to the day the run ends covers the run until 12 hours past its end. (The first
+# 12 hours, before the first noon, still borrow from the end of the record; see #4.)
+
+start_date = DateTime(config["time"]["start_date"])
+run_days   = ceil(Int, config["time"]["stop_hours"] / 24)
+dates      = start_date : Day(1) : start_date + Day(max(run_days, 1))
 dataset = GLORYSDaily()
 region  = BoundingBox(longitude = (-180, 180), latitude = (45, 90))
 
