@@ -2,12 +2,6 @@
 #
 # *A short regional test of a pan-Arctic domain on a rotated grid.*
 #
-# This script adapts the [Barents Sea regional tutorial](02_barents_sea_regional.jl) to the **whole Arctic
-# Ocean**: an Atlantic open boundary reaching down to ~50°N and a domain that also connects to the Pacific
-# through the Bering side. The science target is the same — Atlantic/Pacific inflow, an ice edge, the polar
-# front — but the geometry forces one structural change: the domain arcs across the high Arctic near the North
-# Pole, where a plain latitude–longitude grid is singular.
-#
 # !!! warning "This is a *test* configuration"
 #     The default config runs 0.15° for 10 days (see `config.toml`). The goal is to
 #     shake out the grid orientation and the open-boundary plumbing — *not* to produce a validated simulation. Several
@@ -77,7 +71,7 @@ mp4_html(path) = HTML(string("<video autoplay loop muted playsinline controls ",
 const λ₁, λ₂ = 151, 212   # rotated longitude (east ↔ west edges → continents)
 const φ₁, φ₂ = -34.8, 27  # rotated latitude: south = Atlantic (~50°N) ↔ north (cuts across Bering Sea)
 
-res = config["grid"]["resolution"]   # degrees; 0.15 ≈ TOPAZ2, 0.075 ≈ TOPAZ5
+res = config["grid"]["resolution"]
 
 Nx  = round(Int, (λ₂ - λ₁) / res)
 Ny  = round(Int, (φ₂ - φ₁) / res)
@@ -427,4 +421,4 @@ Colorbar(fig[2, 4], hm_h, label = "ice volume per area [m]")
 CairoMakie.record(fig, joinpath(output_dir, "arctic_sea.mp4"), 1:length(times), framerate = 4) do i
     n[] = i
 end
-mp4_html(joinpath(output_dir, "arctic_sea.mp4"))
+mp4_html(joinpath(output_dir, "panarctic.mp4"))
