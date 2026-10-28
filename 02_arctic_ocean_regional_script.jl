@@ -148,8 +148,12 @@ dates   = DateTime(1993, 1, 1) : Day(1) : DateTime(1993, 1, 6)   # short range f
 dataset = GLORYSDaily()
 region  = BoundingBox(longitude = (-180, 180), latitude = (45, 90))
 
-Tᵉˣᵗ = FieldTimeSeries(Metadata(:temperature;  dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
-Sᵉˣᵗ = FieldTimeSeries(Metadata(:salinity;     dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
+# T and S use NumericalEarth's default inpainting, which fills every gap in GLORYS. A capped number of passes
+# (e.g. `inpainting=100`) leaves zeros below GLORYS's sea floor in enclosed deep basins such as Baffin Bay;
+# partial bottom cells are sampled at the centre of the full cell, below the sea floor, and pick those zeros
+# up as spuriously fresh, light bottom water that overturns the whole column.
+Tᵉˣᵗ = FieldTimeSeries(Metadata(:temperature;  dates, dataset, region, dir_kw...), grid, time_indices_in_memory=length(dates))
+Sᵉˣᵗ = FieldTimeSeries(Metadata(:salinity;     dates, dataset, region, dir_kw...), grid, time_indices_in_memory=length(dates))
 uᵉˣᵗ = FieldTimeSeries(Metadata(:u_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 vᵉˣᵗ = FieldTimeSeries(Metadata(:v_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 ηᵉˣᵗ = FieldTimeSeries(Metadata(:free_surface; dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
@@ -248,10 +252,10 @@ end
 # Tracers relax on the gentle 1-day timescale; velocities get a much stronger ~20-minute edge nudge so the
 # near-boundary interior stays matched to the prescribed boundary:
 
-FT = DatasetRestoring(Metadata(:temperature; dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask, inpainting=100)
+FT = DatasetRestoring(Metadata(:temperature; dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
 Fu = DatasetRestoring(Metadata(:u_velocity;  dates, dataset, region, dir_kw...), grid; rate = 1/20minutes, mask = sponge_mask, inpainting=100)
 Fv = DatasetRestoring(Metadata(:v_velocity;  dates, dataset, region, dir_kw...), grid; rate = 1/20minutes, mask = sponge_mask, inpainting=100)
-FS = DatasetRestoring(Metadata(:salinity;    dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask, inpainting=100)
+FS = DatasetRestoring(Metadata(:salinity;    dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
 
 # ## The ocean component
 #
@@ -284,6 +288,25 @@ sea_ice = sea_ice_simulation(grid, ocean; dynamics=nothing)
 set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1])
 set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date=dates[1], dataset=ECCO4Monthly(), dir_kw...),
                     ℵ = Metadatum(:sea_ice_concentration; date=dates[1], dataset=ECCO4Monthly(), dir_kw...))
+
+# Check that the initial state is gravitationally stable: N² = ∂b/∂z between vertically adjacent wet cells
+# (face k lies between cells k-1 and k). Real data has tiny inversions; anything below -1e-6 s⁻² is suspect.
+
+cpu_grid = Oceananigans.Architectures.on_architecture(CPU(), grid)
+wet = [!immersed_inactive_node(i, j, k, cpu_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny, k in 1:Nz]
+b = Field(Oceananigans.Models.buoyancy_operation(ocean.model))
+compute!(b)
+N² = Array(interior(compute!(Field(∂z(b)))))
+unstable = [(i, j, k) for i in 1:Nx, j in 1:Ny, k in 2:Nz if wet[i, j, k-1] && wet[i, j, k] && N²[i, j, k] < -1e-6]
+
+if isempty(unstable)
+    @info "Initial state is gravitationally stable (no N² < -1e-6 s⁻² between wet cells)"
+else
+    @warn "$(length(unstable)) faces with N² < -1e-6 s⁻² in the initial state; the five most unstable (i, j, k):"
+    for (i, j, k) in first(sort(unstable, by = c -> N²[c...]), 5)
+        @warn @sprintf("   (%d, %d, %d)   N² = %.2e s⁻²", i, j, k, N²[i, j, k])
+    end
+end
 
 # ## The atmosphere and the coupled model
 
