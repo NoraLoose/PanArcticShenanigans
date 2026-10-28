@@ -2,15 +2,15 @@
 #
 # *A short regional test of a pan-Arctic domain on a rotated grid.*
 #
-# This notebook adapts the [Barents Sea regional tutorial](02_barents_sea_regional.jl) to the **whole Arctic
+# This script adapts the [Barents Sea regional tutorial](02_barents_sea_regional.jl) to the **whole Arctic
 # Ocean**: an Atlantic open boundary reaching down to ~50°N and a domain that also connects to the Pacific
 # through the Bering side. The science target is the same — Atlantic/Pacific inflow, an ice edge, the polar
 # front — but the geometry forces one structural change: the domain arcs across the high Arctic near the North
 # Pole, where a plain latitude–longitude grid is singular.
 #
 # !!! warning "This is a *test* configuration"
-#     The grid is at 1/8° but the run is only a few time steps. The goal is to shake out the grid orientation
-#     and the open-boundary plumbing — *not* to produce a validated simulation. Several
+#     The grid is at 0.15° and the run is only 10 days (shorter with `STOP_HOURS`, see below). The goal is to
+#     shake out the grid orientation and the open-boundary plumbing — *not* to produce a validated simulation. Several
 #     choices below (the rotation, the box bounds, the velocity boundary conditions) are flagged as things to
 #     verify and tune.
 #
@@ -319,7 +319,11 @@ coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation)
 # The progress line prints the velocity extrema every couple of steps: if the open boundaries are wired
 # sanely these stay bounded; a blow-up at the edge is the signature of a misconfigured OBC.
 
-simulation = Simulation(coupled_model; Δt = 10minutes, stop_time = 10days)
+# The run length is 10 days by default. Set the `STOP_HOURS` environment variable for a shorter check,
+# e.g. `STOP_HOURS=3 julia --project panarctic.jl`:
+
+stop_time = parse(Float64, get(ENV, "STOP_HOURS", "240")) * hours
+simulation = Simulation(coupled_model; Δt = 10minutes, stop_time)
 
 wall_time = Ref(time_ns())
 
@@ -410,7 +414,3 @@ CairoMakie.record(fig, "arctic_sea.mp4", 1:length(times), framerate = 4) do i
     n[] = i
 end
 mp4_html("arctic_sea.mp4")
-
-# ---
-#
-# *This notebook was generated using [Literate.jl](https://github.com/fredrikekre/Literate.jl).*
