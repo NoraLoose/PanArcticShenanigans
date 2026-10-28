@@ -9,7 +9,7 @@
 # Pole, where a plain latitude–longitude grid is singular.
 #
 # !!! warning "This is a *test* configuration"
-#     The grid is at 0.15° and the run is only 10 days (shorter with `STOP_HOURS`, see below). The goal is to
+#     The default config runs 0.15° for 10 days (see `config.toml`). The goal is to
 #     shake out the grid orientation and the open-boundary plumbing — *not* to produce a validated simulation. Several
 #     choices below (the rotation, the box bounds, the velocity boundary conditions) are flagged as things to
 #     verify and tune.
@@ -33,8 +33,20 @@ using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inacti
 using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid
 using Dates, CUDA, Printf, Base64
 using CopernicusMarine   # enables the GLORYS download extension
+using TOML
 
-arch = GPU()
+# ## Settings
+#
+# Run settings (grid size, dates, run length, paths) live in a TOML file, so nobody has to edit this script to
+# change them. Pass the file on the command line, `julia +1.13 --project=. panarctic.jl my_config.toml`;
+# without an argument the script reads `config.toml` next to it. Credentials for the downloads stay in
+# environment variables (see the README), never in the config file.
+
+config_file = isempty(ARGS) ? joinpath(@__DIR__, "config.toml") : ARGS[1]
+config = TOML.parsefile(config_file)
+@info "Settings from $config_file" config
+
+arch = config["architecture"] == "GPU" ? GPU() : CPU()
 
 # A small helper to embed an mp4 inline in the notebook (self-contained, plays in JupyterLab):
 
@@ -65,12 +77,11 @@ mp4_html(path) = HTML(string("<video autoplay loop muted playsinline controls ",
 const λ₁, λ₂ = 151, 212   # rotated longitude (east ↔ west edges → continents)
 const φ₁, φ₂ = -34.8, 27  # rotated latitude: south = Atlantic (~50°N) ↔ north (cuts across Bering Sea)
 
-res = 0.15 # equiv. TOPAZ2
-#res = 0.075 # equiv. TOPAZ5
+res = config["grid"]["resolution"]   # degrees; 0.15 ≈ TOPAZ2, 0.075 ≈ TOPAZ5
 
 Nx  = round(Int, (λ₂ - λ₁) / res)
 Ny  = round(Int, (φ₂ - φ₁) / res)
-Nz  = 20
+Nz  = config["grid"]["Nz"]
 
 depth = 4000meters
 z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
@@ -83,9 +94,12 @@ underlying_grid = RotatedLatitudeLongitudeGrid(arch;
                                                z,
                                                halo = (7, 7, 7))
 
-# Downloads land in `DATA_DIR` when that environment variable is set, else each product's default cache:
+# Downloads land in `data_dir` from the config, or in each product's default cache when that is empty.
+# Output goes to `output_dir`:
 
-dir_kw = haskey(ENV, "DATA_DIR") ? (; dir = ENV["DATA_DIR"]) : (;)
+data_dir   = config["paths"]["data_dir"]
+dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
+output_dir = mkpath(config["paths"]["output_dir"])
 
 bathymetry = Metadatum(:bottom_height; dataset = ETOPO2022(), dir_kw...)
 bottom_height = regrid_bathymetry(underlying_grid, bathymetry;
@@ -144,7 +158,7 @@ fig
 #     The tracer (`T`, `S`) and free-surface (`η`) conditions are unaffected (scalars). The north/south normal
 #     velocity is the grid-`v`, fed from GLORYS `v_velocity` — treat this as the main thing to validate.
 
-dates   = DateTime(1993, 1, 1) : Day(1) : DateTime(1993, 1, 6)   # short range for a quick test
+dates   = DateTime(config["time"]["start_date"]) : Day(1) : DateTime(config["time"]["end_date"])
 dataset = GLORYSDaily()
 region  = BoundingBox(longitude = (-180, 180), latitude = (45, 90))
 
@@ -172,10 +186,10 @@ ax  = Axis(fig[1, 1], xlabel = "grid i (rotated)", ylabel = "grid j (rotated)",
            title = "GLORYS free surface", aspect = DataAspect())
 hm  = heatmap!(ax, ηv, colormap = :balance, colorrange = (-1.5, 0.2), nan_color = :gray80)
 Colorbar(fig[1, 2], hm, label = "Free surface [m]")
-CairoMakie.record(fig, "arctic_free_surface.mp4", 1:length(dates), framerate = 4) do i
+CairoMakie.record(fig, joinpath(output_dir, "arctic_free_surface.mp4"), 1:length(dates), framerate = 4) do i
     iter[] = i
 end
-mp4_html("arctic_free_surface.mp4")
+mp4_html(joinpath(output_dir, "arctic_free_surface.mp4"))
 
 # Discrete boundary functions evaluate the external `FieldTimeSeries` at the boundary index and the current
 # clock time. We need the south and north edges; `v` is the normal velocity there:
@@ -319,11 +333,11 @@ coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation)
 # The progress line prints the velocity extrema every couple of steps: if the open boundaries are wired
 # sanely these stay bounded; a blow-up at the edge is the signature of a misconfigured OBC.
 
-# The run length is 10 days by default. Set the `STOP_HOURS` environment variable for a shorter check,
-# e.g. `STOP_HOURS=3 julia --project panarctic.jl`:
+# Time step and run length come from the config (`stop_hours`; e.g. 3 for a quick check):
 
-stop_time = parse(Float64, get(ENV, "STOP_HOURS", "240")) * hours
-simulation = Simulation(coupled_model; Δt = 10minutes, stop_time)
+Δt        = config["time"]["dt_minutes"] * minutes
+stop_time = config["time"]["stop_hours"] * hours
+simulation = Simulation(coupled_model; Δt, stop_time)
 
 wall_time = Ref(time_ns())
 
@@ -359,13 +373,13 @@ ocean_outputs = merge(ocean.model.tracers, (; 𝒱))
 sea_ice_outputs = (; he)
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
-                                            filename = "arctic_ocean_surface.jld2",
+                                            filename = joinpath(output_dir, "arctic_ocean_surface.jld2"),
                                             indices = (:, :, grid.Nz-2),
                                             schedule = TimeInterval(1hours),
                                             overwrite_files = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
-                                              filename = "arctic_sea_ice_surface.jld2",
+                                              filename = joinpath(output_dir, "arctic_sea_ice_surface.jld2"),
                                               schedule = TimeInterval(1hours),
                                               overwrite_files = true)
 
@@ -379,10 +393,10 @@ run!(simulation)
 # of integration this is a sanity check, not a climate story: look for finite, bounded fields and sensible
 # behaviour at the open edges.
 
-To = FieldTimeSeries("arctic_ocean_surface.jld2",   "T")
-So = FieldTimeSeries("arctic_ocean_surface.jld2",   "S")
-Uo = FieldTimeSeries("arctic_ocean_surface.jld2",   "𝒱")
-hi = FieldTimeSeries("arctic_sea_ice_surface.jld2", "he")
+To = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "T")
+So = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "S")
+Uo = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "𝒱")
+hi = FieldTimeSeries(joinpath(output_dir, "arctic_sea_ice_surface.jld2"), "he")
 
 times = To.times
 n = Observable(length(times))
@@ -410,7 +424,7 @@ Colorbar(fig[1, 4], hm_S, label = "SSS [psu]")
 Colorbar(fig[2, 2], hm_U, label = "Surface speed [ms⁻¹]")
 Colorbar(fig[2, 4], hm_h, label = "ice volume per area [m]")
 
-CairoMakie.record(fig, "arctic_sea.mp4", 1:length(times), framerate = 4) do i
+CairoMakie.record(fig, joinpath(output_dir, "arctic_sea.mp4"), 1:length(times), framerate = 4) do i
     n[] = i
 end
-mp4_html("arctic_sea.mp4")
+mp4_html(joinpath(output_dir, "arctic_sea.mp4"))

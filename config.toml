@@ -1,0 +1,23 @@
+# Settings for panarctic.jl.
+#
+# Run with:  julia +1.13 --project=. panarctic.jl [config file]
+# Without a config file argument, panarctic.jl reads this file. For your own settings, copy this file
+# (e.g. to config_myname.toml) and pass it on the command line.
+#
+# Download credentials are NOT set here; they stay in environment variables (see README).
+
+architecture = "GPU"   # "GPU" or "CPU"
+
+[grid]
+resolution = 0.15      # degrees on the rotated grid (0.15 ≈ TOPAZ2, 0.075 ≈ TOPAZ5)
+Nz = 20                # vertical levels
+
+[time]
+start_date = 1993-01-01   # first day of GLORYS data; also the initial condition
+end_date   = 1993-01-06   # last day of GLORYS data loaded
+dt_minutes = 10           # time step
+stop_hours = 240          # run length (240 h = 10 days; e.g. 3 for a quick check)
+
+[paths]
+data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
+output_dir = "."  # where output (.jld2, .mp4) is written
