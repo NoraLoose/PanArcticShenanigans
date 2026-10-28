@@ -327,9 +327,20 @@ end
 
 # ## The atmosphere and the coupled model
 
-atmosphere    = JRA55PrescribedAtmosphere(arch; dir_kw...)
-radiation     = JRA55PrescribedRadiation(arch; dir_kw...)
-land          = JRA55PrescribedLand(grid; dir_kw...)
+# JRA55 for the run's own dates, so the winds match the GLORYS initial and boundary data ("multi_year"),
+# or the 1990–91 repeat year whatever the start date ("repeat_year", e.g. for spin-ups).
+
+jra55 = if config["atmosphere"]["jra55"] == "multi_year"
+    (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end])
+elseif config["atmosphere"]["jra55"] == "repeat_year"
+    (; dataset = RepeatYearJRA55())
+else
+    error("Unknown JRA55 forcing \"$(config["atmosphere"]["jra55"])\"; use \"multi_year\" or \"repeat_year\"")
+end
+
+atmosphere    = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...)
+radiation     = JRA55PrescribedRadiation(arch; jra55..., dir_kw...)
+land          = JRA55PrescribedLand(grid; jra55..., dir_kw...)
 coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation)
 
 # A short run — a handful of hours — just to see whether the boundaries hold and the fields stay finite.
