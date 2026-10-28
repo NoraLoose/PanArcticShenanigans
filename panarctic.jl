@@ -3,7 +3,7 @@
 # *A short regional test of a pan-Arctic domain on a rotated grid.*
 #
 # !!! warning "This is a *test* configuration"
-#     The default config runs 0.15° for 10 days (see `config.toml`). The goal is to
+#     The default config runs 0.15° for 5 days (see `config.toml`). The goal is to
 #     shake out the grid orientation and the open-boundary plumbing — *not* to produce a validated simulation. Several
 #     choices below (the rotation, the box bounds, the velocity boundary conditions) are flagged as things to
 #     verify and tune.
@@ -99,7 +99,7 @@ bottom_height = regrid_bathymetry(underlying_grid, bathymetry;
 
 grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height); active_cells_map = true)
 
-using CairoMakie, SixelTerm
+using CairoMakie
 
 h_bottom = Array(interior(bottom_height, :, :, 1))
 h_bottom[h_bottom .≥ 0] .= NaN
