@@ -27,7 +27,7 @@ Pkg.activate(".")
 DEPOT_PATH
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
-using Oceananigans.BoundaryConditions: Radiation, FlatherBoundaryCondition, NormalFlowBoundaryCondition
+using Oceananigans.BoundaryConditions: NormalRadiation, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
 using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid
@@ -97,7 +97,7 @@ grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height); a
 
 using CairoMakie, SixelTerm
 
-h_bottom = Array(interior(grid.immersed_boundary.bottom_height, :, :, 1))
+h_bottom = Array(interior(bottom_height, :, :, 1))
 h_bottom[h_bottom .≥ 0] .= NaN
 
 fig = Figure(size = (700, 600))
@@ -148,8 +148,12 @@ dates   = DateTime(1993, 1, 1) : Day(1) : DateTime(1993, 1, 6)   # short range f
 dataset = GLORYSDaily()
 region  = BoundingBox(longitude = (-180, 180), latitude = (45, 90))
 
-Tᵉˣᵗ = FieldTimeSeries(Metadata(:temperature;  dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
-Sᵉˣᵗ = FieldTimeSeries(Metadata(:salinity;     dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
+# T and S use NumericalEarth's default inpainting, which fills every gap in GLORYS. A capped number of passes
+# (e.g. `inpainting=100`) leaves zeros below GLORYS's sea floor in enclosed deep basins such as Baffin Bay;
+# partial bottom cells are sampled at the centre of the full cell, below the sea floor, and pick those zeros
+# up as spuriously fresh, light bottom water that overturns the whole column.
+Tᵉˣᵗ = FieldTimeSeries(Metadata(:temperature;  dates, dataset, region, dir_kw...), grid, time_indices_in_memory=length(dates))
+Sᵉˣᵗ = FieldTimeSeries(Metadata(:salinity;     dates, dataset, region, dir_kw...), grid, time_indices_in_memory=length(dates))
 uᵉˣᵗ = FieldTimeSeries(Metadata(:u_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 vᵉˣᵗ = FieldTimeSeries(Metadata(:v_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 ηᵉˣᵗ = FieldTimeSeries(Metadata(:free_surface; dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
@@ -181,21 +185,21 @@ mp4_html("arctic_free_surface.mp4")
 @inline north_v_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny+1, k, Oceananigans.Units.Time(clock.time)]
 nothing #hide
 
-# Radiation timescales à la Marchesiello: 1 day on inflow, infinite on outflow. The normal velocity (`v`) and
+# NormalRadiation timescales à la Marchesiello: 1 day on inflow, infinite on outflow. The normal velocity (`v`) and
 # the tracers are open on south and north; `u` (normal to the closed east/west walls) keeps its default
 # condition:
 
 v_obcs = FieldBoundaryConditions(
-    south = NormalFlowBoundaryCondition(south_obc,   discrete_form = true, parameters = vᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)),
-    north = NormalFlowBoundaryCondition(north_v_obc, discrete_form = true, parameters = vᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)))
+    south = NormalFlowBoundaryCondition(south_obc,   discrete_form = true, parameters = vᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
+    north = NormalFlowBoundaryCondition(north_v_obc, discrete_form = true, parameters = vᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
 
 T_obcs = FieldBoundaryConditions(
-    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)),
-    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)))
+    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
+    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
 
 S_obcs = FieldBoundaryConditions(
-    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)),
-    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = Radiation(inflow_timescale = 1days)))
+    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
+    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
 
 # The Flather condition acts on the barotropic transport `V` with external state `(∫vᵉˣᵗ dz, ηᵉˣᵗ)`,
 # `immersed_peripheral_node` skipping solid cells so the integral is the wet-column transport. Only south and
@@ -227,8 +231,8 @@ end
 end
 
 V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
-    south = FlatherBoundaryCondition(south_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)),
-    north = FlatherBoundaryCondition(north_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)))
+    south = GravityWaveRadiationBoundaryCondition(south_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)),
+    north = GravityWaveRadiationBoundaryCondition(north_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)))
 
 # ## ... and a sponge behind them
 #
@@ -248,10 +252,10 @@ end
 # Tracers relax on the gentle 1-day timescale; velocities get a much stronger ~20-minute edge nudge so the
 # near-boundary interior stays matched to the prescribed boundary:
 
-FT = DatasetRestoring(Metadata(:temperature; dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask, inpainting=100)
+FT = DatasetRestoring(Metadata(:temperature; dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
 Fu = DatasetRestoring(Metadata(:u_velocity;  dates, dataset, region, dir_kw...), grid; rate = 1/20minutes, mask = sponge_mask, inpainting=100)
 Fv = DatasetRestoring(Metadata(:v_velocity;  dates, dataset, region, dir_kw...), grid; rate = 1/20minutes, mask = sponge_mask, inpainting=100)
-FS = DatasetRestoring(Metadata(:salinity;    dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask, inpainting=100)
+FS = DatasetRestoring(Metadata(:salinity;    dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
 
 # ## The ocean component
 #
@@ -285,11 +289,30 @@ set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1])
 set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date=dates[1], dataset=ECCO4Monthly(), dir_kw...),
                     ℵ = Metadatum(:sea_ice_concentration; date=dates[1], dataset=ECCO4Monthly(), dir_kw...))
 
+# Check that the initial state is gravitationally stable: N² = ∂b/∂z between vertically adjacent wet cells
+# (face k lies between cells k-1 and k). Real data has tiny inversions; anything below -1e-6 s⁻² is suspect.
+
+cpu_grid = Oceananigans.Architectures.on_architecture(CPU(), grid)
+wet = [!immersed_inactive_node(i, j, k, cpu_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny, k in 1:Nz]
+b = Field(Oceananigans.Models.buoyancy_operation(ocean.model))
+compute!(b)
+N² = Array(interior(compute!(Field(∂z(b)))))
+unstable = [(i, j, k) for i in 1:Nx, j in 1:Ny, k in 2:Nz if wet[i, j, k-1] && wet[i, j, k] && N²[i, j, k] < -1e-6]
+
+if isempty(unstable)
+    @info "Initial state is gravitationally stable (no N² < -1e-6 s⁻² between wet cells)"
+else
+    @warn "$(length(unstable)) faces with N² < -1e-6 s⁻² in the initial state; the five most unstable (i, j, k):"
+    for (i, j, k) in first(sort(unstable, by = c -> N²[c...]), 5)
+        @warn @sprintf("   (%d, %d, %d)   N² = %.2e s⁻²", i, j, k, N²[i, j, k])
+    end
+end
+
 # ## The atmosphere and the coupled model
 
 atmosphere    = JRA55PrescribedAtmosphere(arch; dir_kw...)
 radiation     = JRA55PrescribedRadiation(arch; dir_kw...)
-land          = JRA55PrescribedLand(arch; dir_kw...)
+land          = JRA55PrescribedLand(grid; dir_kw...)
 coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation)
 
 # A short run — a handful of hours — just to see whether the boundaries hold and the fields stay finite.
@@ -335,12 +358,12 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
                                             filename = "arctic_ocean_surface.jld2",
                                             indices = (:, :, grid.Nz-2),
                                             schedule = TimeInterval(1hours),
-                                            overwrite_existing = true)
+                                            overwrite_files = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                               filename = "arctic_sea_ice_surface.jld2",
                                               schedule = TimeInterval(1hours),
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # The big red button:
 

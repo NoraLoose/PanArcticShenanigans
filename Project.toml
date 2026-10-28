@@ -9,9 +9,7 @@ Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SixelTerm = "65edfddc-f399-4499-8369-a1bd38eee2ea"
 
-[sources]
-NumericalEarth = {rev = "94b38665f6aeb06ee7d9609cc143c28429ae189f", url = "https://github.com/NumericalEarth/NumericalEarth.jl.git"}
-Oceananigans = {rev = "a37133d405730ed146a76d3d49722b47e427d7de", url = "https://github.com/CliMA/Oceananigans.jl.git"}
-
 [compat]
+NumericalEarth = "0.8.2"
+Oceananigans = "0.113"
 julia = "1.10"
