@@ -1,24 +1,8 @@
-# # The Arctic Ocean: a pan-Arctic coupled ocean–sea ice simulation
-#
-# *A short regional test of a pan-Arctic domain on a rotated or polar-stereographic grid.*
-#
-# !!! warning "This is a *test* configuration"
-#     The default config runs the 15 km stereographic grid for 10 days (see `config.toml`). The goal is to
-#     shake out the grid orientation and the open-boundary plumbing — *not* to produce a validated simulation. Several
-#     choices below (the rotation, the box bounds, the velocity boundary conditions) are flagged as things to
-#     verify and tune.
-#
-# !!! warning "Hardware and data requirements"
-#     GPU tutorial. The first run downloads GLORYS12 and JRA55 over the **whole Arctic cap** (45–90°N, all
-#     longitudes) — substantially more than the Barents box, and possibly not pre-staged in the workshop
-#     cache. Keep the date range short (below) on a first run.
+# Pan-Arctic coupled ocean–sea ice simulation (test configuration).
+# Settings are read from a TOML file: `julia +1.13 --project=. panarctic.jl [config.toml]`. See README.
 
 using Pkg
 Pkg.activate(".")
-
-# Upload packages
-
-DEPOT_PATH
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
 using Oceananigans.BoundaryConditions: NormalRadiation, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
@@ -32,46 +16,17 @@ using Dates, CUDA, Printf
 using CopernicusMarine   # enables the GLORYS download extension
 using TOML
 
-# ## Settings
-#
-# Run settings (grid size, dates, run length, paths) live in a TOML file, so nobody has to edit this script to
-# change them. Pass the file on the command line, `julia +1.13 --project=. panarctic.jl my_config.toml`;
-# without an argument the script reads `config.toml` next to it. Credentials for the downloads stay in
-# environment variables (see the README), never in the config file.
-
 config_file = isempty(ARGS) ? joinpath(@__DIR__, "config.toml") : ARGS[1]
 config = TOML.parsefile(config_file)
 @info "Settings from $config_file" config
 
 arch = config["architecture"] == "GPU" ? GPU() : CPU()
 
-# ## A pan-Arctic grid
+# ## Grid
 #
-# A plain `LatitudeLongitudeGrid` **cannot contain the North Pole**: 90°N is a coordinate singularity and cell
-# areas collapse toward it. Two grids avoid it; `[grid] type` in the config picks one. Both have the open
-# boundaries on the **south** edge (j = 1, North Atlantic) and the **north** edge (j = Ny, Pacific/Bering
-# side), while the **east/west** edges fall on land and stay closed walls. So the boundary conditions and the
-# sponge below work on either grid.
-#
-# **`"rotated"`** — a `RotatedLatitudeLongitudeGrid`: the same structured lat–lon machinery, with the grid's
-# north pole moved onto the geographic equator (`north_pole = (λ₀, 0)`), which centres the box on the
-# geographic North Pole; `λ₀` spins the cap about the pole. `longitude`/`latitude` are in the rotated frame.
-# With the pole on the equator an edge midpoint sits near geographic latitude `90 − |φ|`: lower `φ₂` to pull
-# the north edge in from the open Pacific (e.g. `30` → ~60°N), raise `φ₁` to pull the south edge back from
-# the deep Atlantic (e.g. `-30` → ~60°N). The angular resolution is `spacing_km` converted to degrees
-# (15 km ≈ 0.135°), so Δy = `spacing_km` everywhere; Δx shrinks with cos(rotated latitude), up to ~18% near
-# the open edges.
-#
-# **`"stereographic"`** — a `LambertConformalConicGrid` with `standard_parallel = latitude_of_origin = 90`,
-# i.e. a polar-stereographic projection centred on the North Pole. The central meridian λ₀ = -40°
-# (mid-Atlantic) puts the south edge across the North Atlantic (~54°N) and the north edge across the
-# Pacific/Bering sector. The grid is regular in projected (x, y); the physical spacing is
-# `spacing × (1 + sinφ) / 2`: the full `spacing` at the pole, 10–15% finer along the south edge.
-#
-# Both grids take the same `[grid] spacing_km` as their largest spacing, so at a given setting they have the
-# same largest spacing and nearly the same number of columns (~208k at 15 km).
-#
-# Check the bathymetry figure after changing either grid: both open edges should lie over open water.
+# "stereographic" (polar stereographic, default) or "rotated" (rotated lat-lon). Both have their open
+# boundaries on the south (Atlantic, j = 1) and north (Pacific, j = Ny) edges; the east/west edges are land.
+# `spacing_km` is the largest spacing: at the pole (stereographic), or Δy (rotated).
 
 grid_type = config["grid"]["type"]
 Nz        = config["grid"]["Nz"]
@@ -80,8 +35,8 @@ spacing   = config["grid"]["spacing_km"] * kilometers
 z         = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
 
 if grid_type == "rotated"
-    λ₁, λ₂ = 151, 212     # rotated longitude (east ↔ west edges → continents)
-    φ₁, φ₂ = -34.8, 27    # rotated latitude: south = Atlantic (~50°N) ↔ north (cuts across Bering Sea)
+    λ₁, λ₂ = 151, 212     # rotated longitude
+    φ₁, φ₂ = -34.8, 27    # rotated latitude
     res    = rad2deg(spacing / Oceananigans.defaults.planet_radius)   # degrees; Δy = spacing
     underlying_grid = RotatedLatitudeLongitudeGrid(arch;
                                                    size       = (round(Int, (λ₂ - λ₁) / res), round(Int, (φ₂ - φ₁) / res), Nz),
@@ -90,7 +45,7 @@ if grid_type == "rotated"
                                                    north_pole = (145, 0),   # λ₀: spin the cap (south=Atlantic, north=Bering)
                                                    z,
                                                    halo = (7, 7, 7))
-    φ_south = 45          # southern limit of the GLORYS download (as before; the grid's corners reach 44.2°N)
+    φ_south = 45          # southern limit of GLORYS data
 elseif grid_type == "stereographic"
     x₁, x₂  = -3280e3, 3616e3   # west–east projected extent (m)
     y₁, y₂  = -4100e3, 2700e3   # south–north projected extent (m)
@@ -103,16 +58,13 @@ elseif grid_type == "stereographic"
                                                 latitude_of_origin = 90,
                                                 z,
                                                 halo = (7, 7, 7))
-    φ_south = 43          # southern limit of the GLORYS download (the south edge reaches 43.6°N at its ends)
+    φ_south = 43          # southern limit of GLORYS data (grid reaches 43.6°N)
 else
     error("Unknown grid type \"$grid_type\"; use \"rotated\" or \"stereographic\"")
 end
 
 Nx, Ny = size(underlying_grid)[1:2]
 @info "Grid: $grid_type, $Nx × $Ny × $Nz, largest spacing $(spacing / 1e3) km"
-
-# Downloads land in `data_dir` from the config, or in each product's default cache when that is empty.
-# Output goes to `output_dir`:
 
 data_dir   = config["paths"]["data_dir"]
 dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
@@ -143,13 +95,6 @@ if make_figures
     save(joinpath(output_dir, "bathymetry.png"), fig)
 end
 
-# The grid spacing varies across the cap. `xspacings`/`yspacings` at cell centres return the metric
-# (in metres) as 2D arrays — heatmap them in km to see where the grid is finest/coarsest and how the projection
-# distorts it:
-
-# (`xspacings`/`yspacings` return a lazy `KernelFunctionOperation`; wrap in a `Field` + `compute!` so we get a
-# concrete array we can pull off the GPU — `Array(::KernelFunctionOperation)` would scalar-index on the device.)
-
 if make_figures
     Δx = Array(interior(compute!(Field(xspacings(underlying_grid, Center(), Center(), Center()))), :, :, 1)) ./ 1e3   # km
     Δy = Array(interior(compute!(Field(yspacings(underlying_grid, Center(), Center(), Center()))), :, :, 1)) ./ 1e3   # km
@@ -168,15 +113,9 @@ if make_figures
     save(joinpath(output_dir, "grid_spacing.png"), fig)
 end
 
-# ## Open boundary conditions from GLORYS12
+# ## GLORYS boundary data
 #
-# Same recipe as the Barents tutorial — Flather (1976) for the barotropic mode, Orlanski/Marchesiello
-# radiation for baroclinic velocities and tracers — opened on the south (Atlantic) and north (Pacific/Bering)
-# edges. Both open edges are fed by GLORYS12, cropped to the latitudes the grid covers.
-
-# The GLORYS days to load follow from the start date and the run length. GLORYS daily values are daily means
-# centred at noon, so data up to the day the run ends covers the run until 12 hours past its end. (The first
-# 12 hours, before the first noon, still borrow from the end of the record; see #4.)
+# Daily means (centred at noon) from the start date to the end of the run.
 
 start_date = DateTime(config["time"]["start_date"])
 run_days   = ceil(Int, config["time"]["stop_hours"] / 24)
@@ -184,20 +123,14 @@ dates      = start_date : Day(1) : start_date + Day(max(run_days, 1))
 dataset = GLORYSDaily()
 region  = BoundingBox(longitude = (-180, 180), latitude = (φ_south, 90))
 
-# T and S use NumericalEarth's default inpainting, which fills every gap in GLORYS. A capped number of passes
-# (e.g. `inpainting=100`) leaves zeros below GLORYS's sea floor in enclosed deep basins such as Baffin Bay;
-# partial bottom cells are sampled at the centre of the full cell, below the sea floor, and pick those zeros
-# up as spuriously fresh, light bottom water that overturns the whole column.
+# T and S need full inpainting: capped inpainting leaves gaps in deep basins (Baffin Bay overturning, #2).
 Tᵉˣᵗ = FieldTimeSeries(Metadata(:temperature;  dates, dataset, region, dir_kw...), grid, time_indices_in_memory=length(dates))
 Sᵉˣᵗ = FieldTimeSeries(Metadata(:salinity;     dates, dataset, region, dir_kw...), grid, time_indices_in_memory=length(dates))
 uᵉˣᵗ = FieldTimeSeries(Metadata(:u_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 vᵉˣᵗ = FieldTimeSeries(Metadata(:v_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 ηᵉˣᵗ = FieldTimeSeries(Metadata(:free_surface; dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 
-# GLORYS `u`/`v` are geographic **east/north** components, but the model's `u`/`v` point along the grid axes,
-# which on both grids are turned against east/north (on the stereographic grid by up to ~180° far from the
-# central meridian). Each snapshot is rotated into the grid frame with Oceananigans' `intrinsic_vector`, in
-# place, so the boundary conditions and the sponge below use grid-frame velocities.
+# Rotate GLORYS velocities from east/north into the grid frame.
 
 @inline grid_frame_u(i, j, k, grid, uₑ, vₑ) = intrinsic_vector(i, j, k, grid, uₑ, vₑ)[1]
 @inline grid_frame_v(i, j, k, grid, uₑ, vₑ) = intrinsic_vector(i, j, k, grid, uₑ, vₑ)[2]
@@ -211,8 +144,6 @@ for n in eachindex(uᵉˣᵗ.times)
     fill_halo_regions!((uₙ, vₙ))
 end
 @info "Rotated GLORYS velocities into the grid frame"
-
-# A quick look at the external free surface (again in grid-index space):
 
 if make_movies
     iter = Observable(1)
@@ -231,17 +162,13 @@ if make_movies
     end
 end
 
-# Discrete boundary functions evaluate the external `FieldTimeSeries` at the boundary index and the current
-# clock time. We need the south and north edges; `v` is the normal velocity there:
+# ## Open boundary conditions
+#
+# Radiation conditions with 1-day nudging on inflow for v, T and S; Flather for the barotropic transport.
 
 @inline  south_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, 1,       k, Oceananigans.Units.Time(clock.time)]
 @inline  north_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny, k, Oceananigans.Units.Time(clock.time)]
 @inline north_v_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny+1, k, Oceananigans.Units.Time(clock.time)]
-nothing #hide
-
-# NormalRadiation timescales à la Marchesiello: 1 day on inflow, infinite on outflow. The normal velocity (`v`) and
-# the tracers are open on south and north; `u` (normal to the closed east/west walls) keeps its default
-# condition:
 
 v_obcs = FieldBoundaryConditions(
     south = NormalFlowBoundaryCondition(south_obc,   discrete_form = true, parameters = vᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
@@ -254,10 +181,6 @@ T_obcs = FieldBoundaryConditions(
 S_obcs = FieldBoundaryConditions(
     south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
     north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
-
-# The Flather condition acts on the barotropic transport `V` with external state `(∫vᵉˣᵗ dz, ηᵉˣᵗ)`,
-# `immersed_peripheral_node` skipping solid cells so the integral is the wet-column transport. Only south and
-# north (the `V` edges) are open:
 
 @inline wetcell(i, j, k, grid, ℓx, ℓy, ℓz) =
     !immersed_peripheral_node(i, j, k, grid, ℓx, ℓy, ℓz) & !immersed_inactive_node(i, j, k, grid, ℓx, ℓy, ℓz)
@@ -288,34 +211,23 @@ V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
     south = GravityWaveRadiationBoundaryCondition(south_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)),
     north = GravityWaveRadiationBoundaryCondition(north_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)))
 
-# ## ... and a sponge behind them
+# ## Sponge
 #
-# The sponge restores toward GLORYS in a thin rim just inside the open edges. On both grids the geographic
-# `(λ, φ)` are not aligned with the box edges, so instead of an analytic mask of `(λ, φ)` we build the
-# mask in **grid-index space**: a Gaussian rim that is 1 on the open **south/north** edges and decays a few
-# cells inward (no rim on the closed east/west walls). `DatasetRestoring` accepts a plain array mask (indexed
-# by `i, j, k`):
+# Gaussian rim on the open edges. Tracers relax over 1 day, velocities over 20 minutes.
 
 sponge_width = 4   # cells
 sponge_mask  = zeros(Nx, Ny, Nz)
 for j in 1:Ny
-    d = min(j - 1, Ny - j)                          # distance (in cells) to the nearest open (south/north) edge
+    d = min(j - 1, Ny - j)   # cells to the nearest open edge
     sponge_mask[:, j, :] .= exp(-(d / sponge_width)^2)
 end
 
-# Tracers relax on the gentle 1-day timescale; velocities get a much stronger ~20-minute edge nudge so the
-# near-boundary interior stays matched to the prescribed boundary:
-
 FT = DatasetRestoring(Metadata(:temperature; dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
-# The velocity sponge reuses the (possibly rotated) boundary data `uᵉˣᵗ`/`vᵉˣᵗ` rather than loading GLORYS again:
 Fu = DatasetRestoring(uᵉˣᵗ, nothing, on_architecture(arch, sponge_mask), UVelocity(), 1/20minutes)
 Fv = DatasetRestoring(vᵉˣᵗ, nothing, on_architecture(arch, sponge_mask), VVelocity(), 1/20minutes)
 FS = DatasetRestoring(Metadata(:salinity;    dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
 
-# ## The ocean component
-#
-# Assembled by `ocean_simulation` with realistic defaults plus our open boundaries and sponge forcings. Fewer
-# free-surface substeps than the Barents run, since the coarse grid has a gentler barotropic CFL:
+# ## Ocean and sea ice
 
 closure = (CATKEVerticalDiffusivity(minimum_tke=1e-7))
 time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)
@@ -330,22 +242,15 @@ ocean = ocean_simulation(grid;
                                                 T = T_obcs, S = S_obcs,
                                                 V = V_obcs))
 
-# ## The sea-ice component
-#
-# Thermodynamics only (`dynamics = nothing`), wired to the ocean below:
+sea_ice = sea_ice_simulation(grid, ocean; dynamics=nothing)   # thermodynamics only
 
-sea_ice = sea_ice_simulation(grid, ocean; dynamics=nothing)
-
-# ## Initial conditions
-#
-# Mid-winter 1993 from GLORYS12 for the ocean, and ECCO4 for the ice thickness and concentration:
+# ## Initial conditions: GLORYS (ocean) and ECCO4 (sea ice)
 
 set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1])
 set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date=dates[1], dataset=ECCO4Monthly(), dir_kw...),
                     ℵ = Metadatum(:sea_ice_concentration; date=dates[1], dataset=ECCO4Monthly(), dir_kw...))
 
-# Check that the initial state is gravitationally stable: N² = ∂b/∂z between vertically adjacent wet cells
-# (face k lies between cells k-1 and k). Real data has tiny inversions; anything below -1e-6 s⁻² is suspect.
+# Warn about unstable stratification (N² < -1e-6 s⁻² between wet cells) in the initial state.
 
 cpu_grid = Oceananigans.Architectures.on_architecture(CPU(), grid)
 wet = [!immersed_inactive_node(i, j, k, cpu_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny, k in 1:Nz]
@@ -363,18 +268,14 @@ else
     end
 end
 
-# ## The atmosphere and the coupled model
+# ## Atmosphere and coupled model
 
 atmosphere    = JRA55PrescribedAtmosphere(arch; dir_kw...)
 radiation     = JRA55PrescribedRadiation(arch; dir_kw...)
 land          = JRA55PrescribedLand(grid; dir_kw...)
 coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation)
 
-# A short run — a handful of hours — just to see whether the boundaries hold and the fields stay finite.
-# The progress line prints the velocity extrema every couple of steps: if the open boundaries are wired
-# sanely these stay bounded; a blow-up at the edge is the signature of a misconfigured OBC.
-
-# Time step and run length come from the config (`stop_hours`; e.g. 3 for a quick check):
+# ## Simulation
 
 Δt        = config["time"]["dt_minutes"] * minutes
 stop_time = config["time"]["stop_hours"] * hours
@@ -400,9 +301,7 @@ end
 
 add_callback!(simulation, progress, TimeInterval(1hours))
 
-# ## Output
-#
-# Surface fields from both components, on a short schedule so the few-step run still yields a frame or two:
+# ## Output: hourly fields near the surface
 
 u, v, w = ocean.model.velocities
 h = sea_ice.model.ice_thickness
@@ -424,15 +323,9 @@ sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                               schedule = TimeInterval(1hours),
                                               overwrite_files = true)
 
-# The big red button:
-
 run!(simulation)
 
-# ## Results
-#
-# Four surface fields — SST, SSS, surface speed, and ice volume — in grid-index space. With only a few hours
-# of integration this is a sanity check, not a climate story: look for finite, bounded fields and sensible
-# behaviour at the open edges.
+# ## Movie of SST, SSS, surface speed and ice volume
 
 if make_movies
     To = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "T")
