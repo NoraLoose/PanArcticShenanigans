@@ -32,6 +32,4 @@ The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk 
 
 The first run is slow: it downloads the data and fills gaps in GLORYS (cached afterwards). Later runs start in a few minutes.
 
-**What a healthy run looks like** (0.15°, one GH200): a warning listing ~29,000 slightly unstable faces near the surface (expected, see #3), then hourly progress lines with max |u|, |v| around 0.4–1.5 m/s, max |w| around 1 cm/s, and no NaNs. The model runs at about 0.24 s per simulated hour.
-
 Output (`arctic_*.jld2`, `*.mp4`) is written to `output_dir`.
