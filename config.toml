@@ -9,10 +9,7 @@
 architecture = "GPU"   # "GPU" or "CPU"
 
 [grid]
-type       = "stereographic"   # "stereographic" (polar stereographic) or "rotated" (rotated lat-lon)
-spacing_km = 15     # largest horizontal grid spacing [km], used by both grid types:
-                    #   stereographic: at the pole; 10–15% finer along the south edge
-                    #   rotated: Δy everywhere (15 km ≈ 0.135°); Δx up to ~18% finer near the open edges
+spacing_km = 15     # largest horizontal grid spacing [km] (at the pole; ~15% finer near the south edge)
 Nz         = 20     # vertical levels
 depth      = 5000   # maximum depth (m)
 

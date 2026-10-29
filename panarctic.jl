@@ -11,7 +11,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Architectures: on_architecture
 using NumericalEarth.DataWrangling: DatasetRestoring, UVelocity, VVelocity
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
-using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid, LambertConformalConicGrid
+using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
 using Dates, CUDA, Printf
 using CopernicusMarine   # enables the GLORYS download extension
 using TOML
@@ -24,47 +24,30 @@ arch = config["architecture"] == "GPU" ? GPU() : CPU()
 
 # ## Grid
 #
-# "stereographic" (polar stereographic, default) or "rotated" (rotated lat-lon). Both have their open
-# boundaries on the south (Atlantic, j = 1) and north (Pacific, j = Ny) edges; the east/west edges are land.
-# `spacing_km` is the largest spacing: at the pole (stereographic), or Δy (rotated).
+# Polar stereographic (LambertConformalConicGrid, λ₀ = −40°). Open boundaries on the south (Atlantic,
+# j = 1) and north (Pacific, j = Ny) edges; east/west edges are land. `spacing_km` is the largest
+# spacing (at the pole; cells shrink ~15% toward the south edge).
 
-grid_type = config["grid"]["type"]
-Nz        = config["grid"]["Nz"]
-depth     = config["grid"]["depth"] * meters
-spacing   = config["grid"]["spacing_km"] * kilometers
-z         = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
+Nz      = config["grid"]["Nz"]
+depth   = config["grid"]["depth"] * meters
+spacing = config["grid"]["spacing_km"] * kilometers
+z       = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
 
-if grid_type == "rotated"
-    λ₁, λ₂ = 151, 212     # rotated longitude
-    φ₁, φ₂ = -34.8, 27    # rotated latitude
-    res    = rad2deg(spacing / Oceananigans.defaults.planet_radius)   # degrees; Δy = spacing
-    underlying_grid = RotatedLatitudeLongitudeGrid(arch;
-                                                   size       = (round(Int, (λ₂ - λ₁) / res), round(Int, (φ₂ - φ₁) / res), Nz),
-                                                   longitude  = (λ₁, λ₂),
-                                                   latitude   = (φ₁, φ₂),
-                                                   north_pole = (145, 0),   # λ₀: spin the cap (south=Atlantic, north=Bering)
-                                                   z,
-                                                   halo = (7, 7, 7))
-    φ_south = 45          # southern limit of GLORYS data
-elseif grid_type == "stereographic"
-    x₁, x₂  = -3280e3, 3616e3   # west–east projected extent (m)
-    y₁, y₂  = -4100e3, 2700e3   # south–north projected extent (m)
-    underlying_grid = LambertConformalConicGrid(arch;
-                                                size               = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
-                                                x                  = (x₁, x₂),
-                                                y                  = (y₁, y₂),
-                                                central_longitude  = -40,   # λ₀: mid-Atlantic
-                                                standard_parallel  = 90,
-                                                latitude_of_origin = 90,
-                                                z,
-                                                halo = (7, 7, 7))
-    φ_south = 43          # southern limit of GLORYS data (grid reaches 43.6°N)
-else
-    error("Unknown grid type \"$grid_type\"; use \"rotated\" or \"stereographic\"")
-end
+x₁, x₂  = -3280e3, 3616e3   # west–east projected extent (m)
+y₁, y₂  = -4100e3, 2700e3   # south–north projected extent (m)
+underlying_grid = LambertConformalConicGrid(arch;
+                                            size               = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
+                                            x                  = (x₁, x₂),
+                                            y                  = (y₁, y₂),
+                                            central_longitude  = -40,   # λ₀: mid-Atlantic
+                                            standard_parallel  = 90,
+                                            latitude_of_origin = 90,
+                                            z,
+                                            halo = (7, 7, 7))
+φ_south = 43   # southern limit of GLORYS data (grid reaches 43.6°N)
 
 Nx, Ny = size(underlying_grid)[1:2]
-@info "Grid: $grid_type, $Nx × $Ny × $Nz, largest spacing $(spacing / 1e3) km"
+@info "Grid: $Nx × $Ny × $Nz, largest spacing $(spacing / 1e3) km"
 
 data_dir   = config["paths"]["data_dir"]
 dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
@@ -88,7 +71,7 @@ h_bottom[h_bottom .≥ 0] .= NaN
 if make_figures
     fig = Figure(size = (700, 600))
     ax = Axis(fig[1, 1], xlabel = "grid i", ylabel = "grid j",
-              title = "Arctic bathymetry ($grid_type grid)", aspect = DataAspect())
+              title = "Arctic bathymetry", aspect = DataAspect())
     hm = heatmap!(ax, h_bottom, colormap = :deep, colorrange = (-depth, 0), nan_color = :gray80)
     Colorbar(fig[1, 2], hm, label = "bottom height [m]")
 
