@@ -18,6 +18,9 @@ start_date = 1993-01-01   # initial condition (GLORYS and ECCO); GLORYS is loade
 dt_minutes = 10           # time step
 stop_hours = 120          # run length (120 h = 5 days; e.g. 3 for a quick check)
 
+[atmosphere]
+jra55 = "multi_year"   # "multi_year": JRA55 for the run's own dates; "repeat_year": the 1990–91 repeat year
+
 [paths]
 data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
 output_dir = "."  # where output (.jld2, .png, .mp4) is written
