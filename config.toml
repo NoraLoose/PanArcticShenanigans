@@ -9,8 +9,9 @@
 architecture = "GPU"   # "GPU" or "CPU"
 
 [grid]
-resolution = 0.15      # degrees on the rotated grid (0.15 ≈ TOPAZ2, 0.075 ≈ TOPAZ5)
-Nz = 20                # vertical levels
+spacing_km = 15     # largest horizontal grid spacing [km] (at the pole; ~15% finer near the south edge)
+Nz         = 20     # vertical levels
+depth      = 5000   # maximum depth (m)
 
 [time]
 start_date = 1993-01-01   # initial condition (GLORYS and ECCO); GLORYS is loaded from here to the end of the run
