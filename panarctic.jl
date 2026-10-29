@@ -256,8 +256,16 @@ sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order = 5))   # EVP d
 # ## Initial conditions: GLORYS (ocean) and ECCO4 (sea ice)
 
 set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1])
-set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date=dates[1], dataset=ECCO4Monthly(), dir_kw...),
-                    ℵ = Metadatum(:sea_ice_concentration; date=dates[1], dataset=ECCO4Monthly(), dir_kw...))
+set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = dates[1], dataset, region, dir_kw...),
+                    ℵ = Metadatum(:sea_ice_concentration; date = dates[1], dataset, region, dir_kw...))
+
+# Sea-ice fields are not gap-filled (zeros are real), so coastal cells can pick up NaN from land.
+for f in (sea_ice.model.ice_thickness, sea_ice.model.ice_concentration)
+    a = Array(interior(f))
+    @info @sprintf("%s: %d NaN cells set to 0; max %.2f", summary(f), count(isnan, a), maximum(filter(!isnan, a)))
+    replace!(a, NaN => 0)
+    set!(f, a)
+end
 
 # Warn about unstable stratification (N² < -1e-6 s⁻² between wet cells) in the initial state.
 
