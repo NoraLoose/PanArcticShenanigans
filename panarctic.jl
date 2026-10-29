@@ -256,8 +256,20 @@ sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order = 5))   # EVP d
 # ## Initial conditions: GLORYS (ocean and sea ice)
 
 set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1])
-set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = dates[1], dataset, region, dir_kw...),
-                    ℵ = Metadatum(:sea_ice_concentration; date = dates[1], dataset, region, dir_kw...))
+# GLORYS sea-ice fields are NaN on land and open water; after interpolation make them consistent:
+# concentration in [0, 1], and thickness and concentration either both zero or both positive.
+h = Array(interior(sea_ice.model.ice_thickness))
+ℵ = Array(interior(sea_ice.model.ice_concentration))
+@info @sprintf("GLORYS ice: %d / %d NaN cells; max h %.2f m, max ℵ %.3f",
+               count(isnan, h), count(isnan, ℵ), maximum(filter(!isnan, h)), maximum(filter(!isnan, ℵ)))
+replace!(h, NaN => 0)
+replace!(ℵ, NaN => 0)
+clamp!(ℵ, 0, 1)
+h .= max.(h, 0)
+no_ice = (h .== 0) .| (ℵ .== 0)
+h[no_ice] .= 0
+ℵ[no_ice] .= 0
+set!(sea_ice.model, h = h, ℵ = ℵ)
 
 # Sea-ice fields are not gap-filled (zeros are real), so coastal cells can pick up NaN from land.
 for f in (sea_ice.model.ice_thickness, sea_ice.model.ice_concentration)
