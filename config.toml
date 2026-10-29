@@ -26,7 +26,7 @@ output_dir = "."  # where output (.jld2, .png, .mp4) is written
 velocity_inflow_days      = 1    # oblique radiation on u, v: nudging timescale toward GLORYS on inflow
 tracer_inflow_km_atlantic = 50   # T, S reservoirs: relaxation length scale on inflow, Atlantic edge
 tracer_inflow_km_pacific  = 20   # same, Pacific/Bering edge
-sponge = false                # GLORYS restoring in a rim along the open edges
+sponge = false                # GLORYS restoring in a rim along the open edges; keep off in normal use, potentially useful for debugging
 
 [output]
 figures = true    # save bathymetry.png and grid_spacing.png to output_dir
