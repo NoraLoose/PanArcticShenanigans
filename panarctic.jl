@@ -5,7 +5,7 @@ using Pkg
 Pkg.activate(".")
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
-using Oceananigans.BoundaryConditions: NormalRadiation, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
+using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ, intrinsic_vector
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Architectures: on_architecture
@@ -126,7 +126,17 @@ for n in eachindex(uᵉˣᵗ.times)
     interior(vₙ) .= interior(vᵍ)
     fill_halo_regions!((uₙ, vₙ))
 end
-@info "Rotated GLORYS velocities into the grid frame"
+
+# Interpolate the rotated velocities to the faces where the model's u and v live.
+
+uᶠ = FieldTimeSeries{Face, Center, Center}(grid, uᵉˣᵗ.times; time_indexing = uᵉˣᵗ.time_indexing)
+vᶠ = FieldTimeSeries{Center, Face, Center}(grid, vᵉˣᵗ.times; time_indexing = vᵉˣᵗ.time_indexing)
+
+for n in eachindex(uᵉˣᵗ.times)
+    set!(uᶠ[n], compute!(Field(@at((Face, Center, Center), uᵉˣᵗ[n]))))
+    set!(vᶠ[n], compute!(Field(@at((Center, Face, Center), vᵉˣᵗ[n]))))
+end
+@info "Rotated GLORYS velocities into the grid frame and interpolated them to faces"
 
 if make_movies
     iter = Observable(1)
@@ -147,23 +157,34 @@ end
 
 # ## Open boundary conditions
 #
-# Radiation conditions with 1-day nudging on inflow for v, T and S; Flather for the barotropic transport.
+# Velocities: oblique radiation (Raymond & Kuo 1984), nudged toward GLORYS on inflow, on both the normal (v)
+# and the tangential (u) component. Tracers: reservoirs (as in MOM6) that relax toward GLORYS over a
+# length scale on inflow. Barotropic transport: Flather. Timescale and length scales are in the config.
 
-@inline  south_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, 1,       k, Oceananigans.Units.Time(clock.time)]
-@inline  north_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny, k, Oceananigans.Units.Time(clock.time)]
-@inline north_v_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny+1, k, Oceananigans.Units.Time(clock.time)]
+bc = config["boundaries"]
+velocity_scheme() = ObliqueRadiation(inflow_timescale = bc["velocity_inflow_days"] * days)
+south_tracer_scheme() = TracerReservoir(inflow_length_scale = bc["tracer_inflow_km_south"] * kilometers)
+north_tracer_scheme() = TracerReservoir(inflow_length_scale = bc["tracer_inflow_km_north"] * kilometers)
+
+@inline south_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, 1,       k, Oceananigans.Units.Time(clock.time)]
+@inline north_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny, k, Oceananigans.Units.Time(clock.time)]
+@inline north_face_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny+1, k, Oceananigans.Units.Time(clock.time)]
+
+u_obcs = FieldBoundaryConditions(
+    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = uᶠ, scheme = velocity_scheme()),
+    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = uᶠ, scheme = velocity_scheme()))
 
 v_obcs = FieldBoundaryConditions(
-    south = NormalFlowBoundaryCondition(south_obc,   discrete_form = true, parameters = vᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
-    north = NormalFlowBoundaryCondition(north_v_obc, discrete_form = true, parameters = vᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
+    south = NormalFlowBoundaryCondition(south_obc,      discrete_form = true, parameters = vᶠ, scheme = velocity_scheme()),
+    north = NormalFlowBoundaryCondition(north_face_obc, discrete_form = true, parameters = vᶠ, scheme = velocity_scheme()))
 
 T_obcs = FieldBoundaryConditions(
-    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
-    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
+    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = south_tracer_scheme()),
+    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Tᵉˣᵗ, scheme = north_tracer_scheme()))
 
 S_obcs = FieldBoundaryConditions(
-    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)),
-    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = NormalRadiation(inflow_timescale = 1days)))
+    south = ValueBoundaryCondition(south_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = south_tracer_scheme()),
+    north = ValueBoundaryCondition(north_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = north_tracer_scheme()))
 
 @inline wetcell(i, j, k, grid, ℓx, ℓy, ℓz) =
     !immersed_peripheral_node(i, j, k, grid, ℓx, ℓy, ℓz) & !immersed_inactive_node(i, j, k, grid, ℓx, ℓy, ℓz)
@@ -191,24 +212,29 @@ end
 end
 
 V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
-    south = GravityWaveRadiationBoundaryCondition(south_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)),
-    north = GravityWaveRadiationBoundaryCondition(north_V_obc, discrete_form = true, parameters = (v = vᵉˣᵗ, η = ηᵉˣᵗ)))
+    south = GravityWaveRadiationBoundaryCondition(south_V_obc, discrete_form = true, parameters = (v = vᶠ, η = ηᵉˣᵗ)),
+    north = GravityWaveRadiationBoundaryCondition(north_V_obc, discrete_form = true, parameters = (v = vᶠ, η = ηᵉˣᵗ)))
 
-# ## Sponge
+# ## Sponge (optional, off by default)
 #
 # Gaussian rim on the open edges. Tracers relax over 1 day, velocities over 20 minutes.
 
-sponge_width = 4   # cells
-sponge_mask  = zeros(Nx, Ny, Nz)
-for j in 1:Ny
-    d = min(j - 1, Ny - j)   # cells to the nearest open edge
-    sponge_mask[:, j, :] .= exp(-(d / sponge_width)^2)
-end
+if bc["sponge"]
+    sponge_width = 4   # cells
+    sponge_mask  = zeros(Nx, Ny, Nz)
+    for j in 1:Ny
+        d = min(j - 1, Ny - j)   # cells to the nearest open edge
+        sponge_mask[:, j, :] .= exp(-(d / sponge_width)^2)
+    end
 
-FT = DatasetRestoring(Metadata(:temperature; dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
-Fu = DatasetRestoring(uᵉˣᵗ, nothing, on_architecture(arch, sponge_mask), UVelocity(), 1/20minutes)
-Fv = DatasetRestoring(vᵉˣᵗ, nothing, on_architecture(arch, sponge_mask), VVelocity(), 1/20minutes)
-FS = DatasetRestoring(Metadata(:salinity;    dates, dataset, region, dir_kw...), grid; rate = 1/1days,     mask = sponge_mask)
+    FT = DatasetRestoring(Metadata(:temperature; dates, dataset, region, dir_kw...), grid; rate = 1/1days, mask = sponge_mask)
+    FS = DatasetRestoring(Metadata(:salinity;    dates, dataset, region, dir_kw...), grid; rate = 1/1days, mask = sponge_mask)
+    Fu = DatasetRestoring(uᵉˣᵗ, nothing, on_architecture(arch, sponge_mask), UVelocity(), 1/20minutes)
+    Fv = DatasetRestoring(vᵉˣᵗ, nothing, on_architecture(arch, sponge_mask), VVelocity(), 1/20minutes)
+    forcing = (T = FT, S = FS, u = Fu, v = Fv)
+else
+    forcing = NamedTuple()
+end
 
 # ## Ocean and sea ice
 
@@ -220,8 +246,8 @@ ocean = ocean_simulation(grid;
                          momentum_advection = WENOVectorInvariant(; order=5, time_discretization),
                          tracer_advection = WENO(; order=7, time_discretization, minimum_buffer_upwind_order=1),
                          closure,
-                         forcing = (T = FT, S = FS, u = Fu, v = Fv),
-                         boundary_conditions = (v = v_obcs,
+                         forcing,
+                         boundary_conditions = (u = u_obcs, v = v_obcs,
                                                 T = T_obcs, S = S_obcs,
                                                 V = V_obcs))
 

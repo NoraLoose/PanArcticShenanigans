@@ -22,6 +22,12 @@ stop_hours = 120          # run length (120 h = 5 days; e.g. 3 for a quick check
 data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
 output_dir = "."  # where output (.jld2, .png, .mp4) is written
 
+[boundaries]
+velocity_inflow_days   = 1    # oblique radiation on u, v: nudging timescale toward GLORYS on inflow
+tracer_inflow_km_south = 50   # T, S reservoirs: relaxation length scale on inflow, Atlantic edge
+tracer_inflow_km_north = 20   # same, Pacific edge
+sponge = false                # GLORYS restoring in a rim along the open edges
+
 [output]
 figures = true    # save bathymetry.png and grid_spacing.png to output_dir
 movies  = true    # make arctic_free_surface.mp4 (GLORYS input) and arctic_sea.mp4 (results)
