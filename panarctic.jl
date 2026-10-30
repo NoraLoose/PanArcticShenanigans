@@ -274,13 +274,9 @@ h[no_ice] .= 0
 ℵ[no_ice] .= 0
 set!(sea_ice.model, h = h, ℵ = ℵ)
 
-# Sea-ice fields are not gap-filled (zeros are real), so coastal cells can pick up NaN from land.
-for f in (sea_ice.model.ice_thickness, sea_ice.model.ice_concentration)
-    a = Array(interior(f))
-    @info @sprintf("%s: %d NaN cells set to 0; max %.2f", summary(f), count(isnan, a), maximum(filter(!isnan, a)))
-    replace!(a, NaN => 0)
-    set!(f, a)
-end
+# set! from an array fills only the interior; the halos still hold the NaN from the GLORYS fields.
+fill_halo_regions!(sea_ice.model.ice_thickness)
+fill_halo_regions!(sea_ice.model.ice_concentration)
 
 # Warn about unstable stratification (N² < -1e-6 s⁻² between wet cells) in the initial state.
 
