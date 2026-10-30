@@ -24,8 +24,8 @@ output_dir = "."  # where output (.jld2, .png, .mp4) is written
 
 [boundaries]
 velocity_inflow_days      = 1    # oblique radiation on u, v: nudging timescale toward GLORYS on inflow
-tracer_inflow_km_atlantic = 50   # T, S reservoirs: relaxation length scale on inflow, Atlantic edge
-tracer_inflow_km_pacific  = 20   # same, Pacific/Bering edge
+tracer_inflow_km_atlantic = 50   # T, S reservoir inflow relaxation length; longer so recirculating eddy water keeps its properties
+tracer_inflow_km_pacific  = 20   # T, S reservoir inflow relaxation length; shorter for the steady, channelled Bering Strait inflow
 sponge = false                # GLORYS restoring in a rim along the open edges; keep off in normal use, potentially useful for debugging
 
 [output]
