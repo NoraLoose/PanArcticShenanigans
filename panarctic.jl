@@ -212,7 +212,7 @@ FS = DatasetRestoring(Metadata(:salinity;    dates, dataset, region, dir_kw...),
 
 # ## Ocean and sea ice
 
-closure = (CATKEVerticalDiffusivity(minimum_tke=1e-7))
+closure = CATKEVerticalDiffusivity()
 time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)
 
 ocean = ocean_simulation(grid;
