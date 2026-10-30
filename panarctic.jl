@@ -255,7 +255,7 @@ sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order = 5))   # EVP d
 
 # ## Initial conditions: GLORYS (ocean and sea ice)
 
-set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1])
+set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1], η = ηᵉˣᵗ[1])
 set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = dates[1], dataset, region, dir_kw...),
                     ℵ = Metadatum(:sea_ice_concentration; date = dates[1], dataset, region, dir_kw...))
 
