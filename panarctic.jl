@@ -251,13 +251,32 @@ ocean = ocean_simulation(grid;
                                                 T = T_obcs, S = S_obcs,
                                                 V = V_obcs))
 
-sea_ice = sea_ice_simulation(grid, ocean; dynamics=nothing)   # thermodynamics only
+sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order = 5))   # EVP dynamics (default) and ice advection
 
-# ## Initial conditions: GLORYS (ocean) and ECCO4 (sea ice)
+# ## Initial conditions: GLORYS (ocean and sea ice)
 
-set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1])
-set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date=dates[1], dataset=ECCO4Monthly(), dir_kw...),
-                    ℵ = Metadatum(:sea_ice_concentration; date=dates[1], dataset=ECCO4Monthly(), dir_kw...))
+set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1], η = ηᵉˣᵗ[1])
+set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = dates[1], dataset, region, dir_kw...),
+                    ℵ = Metadatum(:sea_ice_concentration; date = dates[1], dataset, region, dir_kw...))
+
+# GLORYS sea-ice fields are NaN on land and open water; after interpolation make them consistent:
+# concentration in [0, 1], and thickness and concentration either both zero or both positive.
+h = Array(interior(sea_ice.model.ice_thickness))
+ℵ = Array(interior(sea_ice.model.ice_concentration))
+@info @sprintf("GLORYS ice: %d / %d NaN cells; max h %.2f m, max ℵ %.3f",
+               count(isnan, h), count(isnan, ℵ), maximum(filter(!isnan, h)), maximum(filter(!isnan, ℵ)))
+replace!(h, NaN => 0)
+replace!(ℵ, NaN => 0)
+clamp!(ℵ, 0, 1)
+h .= max.(h, 0)
+no_ice = (h .== 0) .| (ℵ .== 0)
+h[no_ice] .= 0
+ℵ[no_ice] .= 0
+set!(sea_ice.model, h = h, ℵ = ℵ)
+
+# set! from an array fills only the interior; the halos still hold the NaN from the GLORYS fields.
+fill_halo_regions!(sea_ice.model.ice_thickness)
+fill_halo_regions!(sea_ice.model.ice_concentration)
 
 # Warn about unstable stratification (N² < -1e-6 s⁻² between wet cells) in the initial state.
 
@@ -321,6 +340,13 @@ end
 
 add_callback!(simulation, progress, TimeInterval(1hours))
 
+function ice_progress(sim)
+    uᵢ, vᵢ = sim.model.sea_ice.model.velocities
+    @info @sprintf("    ice: max |u| = %.2f m/s, max |v| = %.2f m/s", maximum(abs, uᵢ), maximum(abs, vᵢ))
+    return nothing
+end
+add_callback!(simulation, ice_progress, TimeInterval(1hours))
+
 # ## Output: hourly fields near the surface
 
 u, v, w = ocean.model.velocities
@@ -330,7 +356,7 @@ h = sea_ice.model.ice_thickness
 he = h * ℵ
 ocean_outputs = merge(ocean.model.tracers, (; 𝒱))
 
-sea_ice_outputs = (; he)
+sea_ice_outputs = (; he, uᵢ = sea_ice.model.velocities.u, vᵢ = sea_ice.model.velocities.v)
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
                                             filename = joinpath(output_dir, "arctic_ocean_surface.jld2"),
