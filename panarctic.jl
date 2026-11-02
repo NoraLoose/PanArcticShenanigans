@@ -98,9 +98,11 @@ end
 
 # ## GLORYS boundary data
 #
-# Daily means (centred at noon) from the start date to the end of the run.
+# Daily means (centred at noon) from the start date to the end of the run. Time counts from 00:00 on the
+# start date, so the run starts at noon, on the first daily mean.
 
 start_date = DateTime(config["time"]["start_date"])
+start_time = 12hours
 run_days   = ceil(Int, config["time"]["stop_hours"] / 24)
 dates      = start_date : Day(1) : start_date + Day(max(run_days, 1))
 dataset = GLORYSDaily()
@@ -242,6 +244,7 @@ closure = CATKEVerticalDiffusivity()
 time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)
 
 ocean = ocean_simulation(grid;
+                         clock = Clock(time = start_time),
                          free_surface = SplitExplicitFreeSurface(grid; substeps=30),
                          momentum_advection = WENOVectorInvariant(; order=5, time_discretization),
                          tracer_advection = WENO(; order=7, time_discretization, minimum_buffer_upwind_order=1),
@@ -251,7 +254,7 @@ ocean = ocean_simulation(grid;
                                                 T = T_obcs, S = S_obcs,
                                                 V = V_obcs))
 
-sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order = 5))   # EVP dynamics (default) and ice advection
+sea_ice = sea_ice_simulation(grid, ocean; clock = Clock(time = start_time), advection = WENO(order = 5))   # EVP dynamics (default) and ice advection
 
 # ## Initial conditions: GLORYS (ocean and sea ice)
 
@@ -299,10 +302,11 @@ end
 # ## Atmosphere and coupled model
 
 # JRA55 for the run's own dates, so the winds match the GLORYS initial and boundary data ("multi_year"),
-# or the 1990–91 repeat year whatever the start date ("repeat_year", e.g. for spin-ups).
+# or the 1990–91 repeat year whatever the start date ("repeat_year", e.g. for spin-ups). The multi-year
+# record runs three days past the run, so that the JRA55 windows in memory stay inside it.
 
 jra55 = if config["atmosphere"]["jra55"] == "multi_year"
-    (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end])
+    (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end] + Day(3))
 elseif config["atmosphere"]["jra55"] == "repeat_year"
     (; dataset = RepeatYearJRA55())
 else
@@ -312,12 +316,17 @@ end
 atmosphere    = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...)
 radiation     = JRA55PrescribedRadiation(arch; jra55..., dir_kw...)
 land          = JRA55PrescribedLand(grid; jra55..., dir_kw...)
-coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation)
+
+for component in (atmosphere, radiation, land)
+    component.clock.time = start_time
+end
+
+coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation, clock = Clock(time = start_time))
 
 # ## Simulation
 
 Δt        = config["time"]["dt_minutes"] * minutes
-stop_time = config["time"]["stop_hours"] * hours
+stop_time = start_time + config["time"]["stop_hours"] * hours
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 wall_time = Ref(time_ns())
@@ -382,7 +391,7 @@ if make_movies
     times = To.times
     n = Observable(length(times))
 
-    title = @lift "Arctic — hour " * string(round(Int, times[$n] / hours))
+    title = @lift "Arctic — hour " * string(round(Int, (times[$n] - start_time) / hours))
 
     Tₙ = @lift(To[$n])
     Sₙ = @lift(So[$n])
