@@ -33,8 +33,8 @@ depth   = config["grid"]["depth"] * meters
 spacing = config["grid"]["spacing_km"] * kilometers
 z       = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
 
-x₁, x₂  = -3280e3, 3616e3   # west–east projected extent (m)
-y₁, y₂  = -4100e3, 2700e3   # south–north projected extent (m)
+x₁, x₂  = -3580e3, 3616e3   # west–east projected extent (m)
+y₁, y₂  = -4100e3, 2300e3   # south–north projected extent (m)
 underlying_grid = LambertConformalConicGrid(arch;
                                             size               = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
                                             x                  = (x₁, x₂),
