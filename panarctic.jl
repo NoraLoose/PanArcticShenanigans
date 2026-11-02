@@ -15,6 +15,7 @@ using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
 using Dates, CUDA, Printf
 using CopernicusMarine   # enables the GLORYS download extension
 using TOML
+using ClimaSeaIce: IncrementalRemapping
 
 config_file = isempty(ARGS) ? joinpath(@__DIR__, "config.toml") : ARGS[1]
 config = TOML.parsefile(config_file)
@@ -251,7 +252,8 @@ ocean = ocean_simulation(grid;
                                                 T = T_obcs, S = S_obcs,
                                                 V = V_obcs))
 
-sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order = 5))   # EVP dynamics (default) and ice advection
+# EVP dynamics (default); incremental remapping of thickness and concentration, which needs forward-Euler steps
+sea_ice = sea_ice_simulation(grid, ocean; advection = IncrementalRemapping(), timestepper = :ForwardEuler)
 
 # ## Initial conditions: GLORYS (ocean and sea ice)
 
