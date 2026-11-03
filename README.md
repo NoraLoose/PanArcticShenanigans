@@ -31,4 +31,15 @@ The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk 
 
 The first run is slow: it downloads the data and fills gaps in GLORYS (cached afterwards). Later runs start in a few minutes.
 
-Output (`arctic_*.jld2`, `*.mp4`) is written to `output_dir`.
+Output (`arctic_*.jld2`) is written to `output_dir`.
+
+## Figures and movies
+
+Plotting is separate from the model run. Both scripts take the same config file as `panarctic.jl` and write to `output_dir`:
+
+```bash
+julia +1.13 --project=. plotting/plot_inputs.jl [config.toml]   # bathymetry.png, grid_spacing.png, arctic_free_surface.mp4 (GLORYS boundary data)
+julia +1.13 --project=. plotting/plot_output.jl [config.toml]   # arctic_sea.mp4 (SST, SSS, surface speed, ice volume) from the model output
+```
+
+`plotting/plot_output.jl` only reads the output files and doesn't need a GPU. `plotting/plot_inputs.jl` builds the grid and reads the GLORYS data, so run it where `panarctic.jl` runs.
