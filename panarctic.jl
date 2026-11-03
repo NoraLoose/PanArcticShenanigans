@@ -11,7 +11,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Architectures: on_architecture
 using NumericalEarth.DataWrangling: DatasetRestoring, UVelocity, VVelocity
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
+using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
 using Dates, CUDA, Printf
 using CopernicusMarine   # enables the GLORYS download extension
 using TOML
@@ -24,7 +24,7 @@ arch = config["architecture"] == "GPU" ? GPU() : CPU()
 
 # ## Grid
 #
-# Polar stereographic (LambertConformalConicGrid, λ₀ = −40°). Open boundaries on the Atlantic
+# Polar stereographic (ConformalConicGrid, λ₀ = −40°). Open boundaries on the Atlantic
 # (j = 1) and Pacific (j = Ny) edges; east/west edges are land. `spacing_km` is the largest
 # spacing (at the pole; cells shrink ~15% toward the Atlantic edge).
 
@@ -35,15 +35,15 @@ z       = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = tr
 
 x₁, x₂  = -3280e3, 3616e3   # west–east projected extent (m)
 y₁, y₂  = -4100e3, 2700e3   # south–north projected extent (m)
-underlying_grid = LambertConformalConicGrid(arch;
-                                            size               = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
-                                            x                  = (x₁, x₂),
-                                            y                  = (y₁, y₂),
-                                            central_longitude  = -40,   # λ₀: mid-Atlantic
-                                            standard_parallel  = 90,
-                                            latitude_of_origin = 90,
-                                            z,
-                                            halo = (7, 7, 7))
+underlying_grid = ConformalConicGrid(arch;
+                                     size               = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
+                                     x                  = (x₁, x₂),
+                                     y                  = (y₁, y₂),
+                                     central_longitude  = -40,   # λ₀: mid-Atlantic
+                                     standard_parallel  = 90,
+                                     latitude_of_origin = 90,
+                                     z,
+                                     halo = (7, 7, 7))
 φ_south = 43   # southern limit of GLORYS data (grid reaches 43.6°N)
 
 Nx, Ny = size(underlying_grid)[1:2]
