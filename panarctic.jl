@@ -1,6 +1,6 @@
 # Pan-Arctic coupled ocean–sea ice simulation (test configuration).
 # Settings are read from a TOML file: `julia +1.13 --project=. panarctic.jl [config.toml]`. See README.
-# Figures and movies: plotting/plot_inputs.jl and plotting/plot_output.jl.
+# Figures and movies: scripts in plotting/ (one per figure).
 
 include("setup.jl")
 
@@ -19,7 +19,7 @@ Tᵉˣᵗ = FieldTimeSeries(Metadata(:temperature;  dates, dataset, region, dir_
 Sᵉˣᵗ = FieldTimeSeries(Metadata(:salinity;     dates, dataset, region, dir_kw...), grid, time_indices_in_memory=length(dates))
 uᵉˣᵗ = FieldTimeSeries(Metadata(:u_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 vᵉˣᵗ = FieldTimeSeries(Metadata(:v_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
-ηᵉˣᵗ = FieldTimeSeries(Metadata(:free_surface; dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
+ηᵉˣᵗ = glorys_free_surface()
 
 # Rotate GLORYS velocities from east/north into the grid frame.
 
@@ -252,13 +252,13 @@ ocean_outputs = merge(ocean.model.tracers, (; 𝒱))
 sea_ice_outputs = (; he, uᵢ = sea_ice.model.velocities.u, vᵢ = sea_ice.model.velocities.v)
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
-                                            filename = joinpath(output_dir, "arctic_ocean_surface.jld2"),
+                                            filename = ocean_surface_file,
                                             indices = (:, :, grid.Nz-2),
                                             schedule = TimeInterval(1hours),
                                             overwrite_files = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
-                                              filename = joinpath(output_dir, "arctic_sea_ice_surface.jld2"),
+                                              filename = sea_ice_surface_file,
                                               schedule = TimeInterval(1hours),
                                               overwrite_files = true)
 

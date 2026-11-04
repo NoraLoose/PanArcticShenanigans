@@ -1,24 +1,14 @@
 # Shared setup for panarctic.jl and the plotting scripts (plotting/): settings, grid and GLORYS dates/region.
 # Included with `include("setup.jl")`; the config file is the first command-line argument (default config.toml).
 
-using Pkg
-Pkg.activate(@__DIR__)
+include("config.jl")
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
 using Dates, CUDA
 using CopernicusMarine   # enables the GLORYS download extension
-using TOML
-
-config_file = isempty(ARGS) ? joinpath(@__DIR__, "config.toml") : ARGS[1]
-config = TOML.parsefile(config_file)
-@info "Settings from $config_file" config
 
 arch = config["architecture"] == "GPU" ? GPU() : CPU()
-
-data_dir   = config["paths"]["data_dir"]
-dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
-output_dir = mkpath(config["paths"]["output_dir"])
 
 # ## Grid
 #
@@ -64,3 +54,8 @@ run_days   = ceil(Int, config["time"]["stop_hours"] / 24)
 dates      = start_date : Day(1) : start_date + Day(max(run_days, 1))
 dataset = GLORYSDaily()
 region  = BoundingBox(longitude = (-180, 180), latitude = (φ_south, 90))
+
+# GLORYS free surface on the model grid. Used by panarctic.jl and plotting/glorys_free_surface.jl,
+# so both read the same inpainted data from the cache.
+glorys_free_surface() = FieldTimeSeries(Metadata(:free_surface; dates, dataset, region, dir_kw...), grid,
+                                        inpainting=100, time_indices_in_memory=length(dates))

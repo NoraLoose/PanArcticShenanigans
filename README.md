@@ -35,11 +35,13 @@ Output (`arctic_*.jld2`) is written to `output_dir`.
 
 ## Figures and movies
 
-Plotting is separate from the model run. Both scripts take the same config file as `panarctic.jl` and write to `output_dir`:
+Plotting is separate from the model run. There is one script per figure or movie; each takes the same config file as `panarctic.jl` and writes to `output_dir`:
 
 ```bash
-julia +1.13 --project=. plotting/plot_inputs.jl [config.toml]   # bathymetry.png, grid_spacing.png, arctic_free_surface.mp4 (GLORYS boundary data)
-julia +1.13 --project=. plotting/plot_output.jl [config.toml]   # arctic_sea.mp4 (SST, SSS, surface speed, ice volume) from the model output
+julia +1.13 --project=. plotting/bathymetry.jl          [config.toml]   # bathymetry.png
+julia +1.13 --project=. plotting/grid_spacing.jl        [config.toml]   # grid_spacing.png
+julia +1.13 --project=. plotting/glorys_free_surface.jl [config.toml]   # arctic_free_surface.mp4 (GLORYS boundary data)
+julia +1.13 --project=. plotting/surface_movie.jl       [config.toml]   # arctic_sea.mp4 (SST, SSS, surface speed, ice volume) from the model output
 ```
 
-`plotting/plot_output.jl` only reads the output files and doesn't need a GPU. `plotting/plot_inputs.jl` builds the grid and reads the GLORYS data, so run it where `panarctic.jl` runs.
+`surface_movie.jl` only reads the output files and doesn't need a GPU. The other three build the grid (and `glorys_free_surface.jl` reads the GLORYS data), so run them where `panarctic.jl` runs.

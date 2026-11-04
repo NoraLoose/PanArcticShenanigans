@@ -1,25 +1,19 @@
 # Movie of SST, SSS, surface speed and ice volume from the output of panarctic.jl.
 #
-#   julia +1.13 --project=. plotting/plot_output.jl [config.toml]
+#   julia +1.13 --project=. plotting/surface_movie.jl [config.toml]
 #
 # Reads arctic_ocean_surface.jld2 and arctic_sea_ice_surface.jld2 from `output_dir` and writes
 # arctic_sea.mp4 there. Runs on the CPU and does not need the grid or input data.
 
-using Pkg
-Pkg.activate(dirname(@__DIR__))
+include("../config.jl")
 
 using Oceananigans, Oceananigans.Units
 using CairoMakie
-using TOML
 
-config_file = isempty(ARGS) ? joinpath(dirname(@__DIR__), "config.toml") : ARGS[1]
-config = TOML.parsefile(config_file)
-output_dir = config["paths"]["output_dir"]
-
-To = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "T")
-So = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "S")
-Uo = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "𝒱")
-hi = FieldTimeSeries(joinpath(output_dir, "arctic_sea_ice_surface.jld2"), "he")
+To = FieldTimeSeries(ocean_surface_file,   "T")
+So = FieldTimeSeries(ocean_surface_file,   "S")
+Uo = FieldTimeSeries(ocean_surface_file,   "𝒱")
+hi = FieldTimeSeries(sea_ice_surface_file, "he")
 
 times = To.times
 n = Observable(length(times))
