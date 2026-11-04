@@ -146,7 +146,9 @@ sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order = 5))   # EVP d
 
 # ## Initial conditions: GLORYS (ocean and sea ice)
 
-set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1], η = ηᵉˣᵗ[1])
+# uᶠ, vᶠ are already rotated into the grid frame (above), so tell set! not to rotate them again:
+# since Oceananigans 0.116 (#6316) it treats velocities as east/north on immersed curvilinear grids too.
+set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1], η = ηᵉˣᵗ[1], intrinsic_velocities = true)
 set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = dates[1], dataset, region, dir_kw...),
                     ℵ = Metadatum(:sea_ice_concentration; date = dates[1], dataset, region, dir_kw...))
 
