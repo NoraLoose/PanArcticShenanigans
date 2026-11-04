@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/6f6c94c5-4a65-4a45-ad01-e083ba5aa039
 - **Data credentials** for the downloads, as environment variables (kept out of the config file so passwords are never committed):
   - GLORYS12 (ocean initial and boundary data): a [Copernicus Marine](https://marine.copernicus.eu) account, set as `COPERNICUSMARINE_SERVICE_USERNAME` and `COPERNICUSMARINE_SERVICE_PASSWORD`.
   - ECCO4 (initial sea ice): NASA Earthdata WebDAV credentials, set as `ECCO_USERNAME` and `ECCO_WEBDAV_PASSWORD`. See NumericalEarth's [ECCO README](https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md) for where to find them (they are not your Earthdata login password).
-  - JRA55 (atmosphere, rivers) and ETOPO (bathymetry) need no account.
+  - JRA55 (atmosphere, rivers) and GEBCO (bathymetry, ~7.5 GB) need no account. Regridding GEBCO onto a new grid needs ~55 GB of memory (e.g. `--mem=80G`); the result is cached.
 
 ## Running
 
