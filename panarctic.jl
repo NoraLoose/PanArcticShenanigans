@@ -150,9 +150,9 @@ sea_ice = sea_ice_simulation(grid, ocean; clock = Clock(time = start_time), adve
 
 # uᶠ, vᶠ are already rotated into the grid frame (above), so tell set! not to rotate them again:
 # since Oceananigans 0.116 (#6316) it treats velocities as east/north on immersed curvilinear grids too.
-set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1], η = ηᵉˣᵗ[1], intrinsic_velocities = true)
-set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = dates[1], dataset, region, dir_kw...),
-                    ℵ = Metadatum(:sea_ice_concentration; date = dates[1], dataset, region, dir_kw...))
+set!(ocean.model, T = Tᵉˣᵗ[2], S = Sᵉˣᵗ[2], u = uᶠ[2], v = vᶠ[2], η = ηᵉˣᵗ[2], intrinsic_velocities = true)   # [2]: start_date
+set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = start_date, dataset, region, dir_kw...),
+                    ℵ = Metadatum(:sea_ice_concentration; date = start_date, dataset, region, dir_kw...))
 
 # GLORYS sea-ice fields are NaN on land and open water; after interpolation make them consistent:
 # concentration in [0, 1], and thickness and concentration either both zero or both positive.
@@ -194,11 +194,11 @@ end
 # ## Atmosphere and coupled model
 
 # JRA55 for the run's own dates, so the winds match the GLORYS initial and boundary data ("multi_year"),
-# or the 1990–91 repeat year whatever the start date ("repeat_year"). The run ends 12 h after dates[end],
-# so the multi-year records needs to run a day past it: with Cyclical indexing, forcing past the last record would otherwise wrap back to the first.
+# or the 1990–91 repeat year whatever the start date ("repeat_year"). Same dates as GLORYS (including the margin
+# days), so its time also counts from 00:00 on dates[1].
 
 jra55 = if config["atmosphere"]["jra55"] == "multi_year"
-    (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end] + Day(1))
+    (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end])
 elseif config["atmosphere"]["jra55"] == "repeat_year"
     (; dataset = RepeatYearJRA55())
 else

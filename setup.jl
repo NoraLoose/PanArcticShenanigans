@@ -47,13 +47,13 @@ grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height); a
 
 # ## GLORYS dates and region
 #
-# Daily means (centred at noon) from the start date to the end of the run. Time counts from 00:00 on the
-# start date, so the run starts at noon, on the first daily mean.
+# Daily means (centred at noon), with one extra day before the start date and after the end of the run as
+# margin. Time counts from 00:00 on dates[1], so the run starts at noon on the start date (dates[2]).
 
 start_date = DateTime(config["time"]["start_date"])
-start_time = 12hours
 run_days   = ceil(Int, config["time"]["stop_hours"] / 24)
-dates      = start_date : Day(1) : start_date + Day(max(run_days, 1))
+dates      = start_date - Day(1) : Day(1) : start_date + Day(max(run_days, 1) + 1)
+start_time = 36hours   # noon on start_date
 dataset = GLORYSDaily()
 region  = BoundingBox(longitude = (-180, 180), latitude = (φ_south, 90))
 
