@@ -18,7 +18,7 @@ hi = FieldTimeSeries(sea_ice_surface_file, "he")
 times = To.times
 n = Observable(length(times))
 
-title = @lift "Arctic — hour " * string(round(Int, times[$n] / hours))
+title = @lift "Arctic — hour " * string(round(Int, (times[$n] - times[1]) / hours))   # hours since the start of the run
 
 Tₙ = @lift(To[$n])
 Sₙ = @lift(So[$n])
