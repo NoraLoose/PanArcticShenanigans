@@ -5,7 +5,7 @@ include("config.jl")
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
-using NumericalEarth.DataWrangling: all_dates
+using NumericalEarth.DataWrangling: GEBCO2026, all_dates   # not exported by NumericalEarth
 using Dates, CUDA
 using CopernicusMarine   # enables the GLORYS download extension
 
@@ -38,7 +38,9 @@ underlying_grid = ConformalConicGrid(arch;
 Nx, Ny = size(underlying_grid)[1:2]
 @info "Grid: $Nx × $Ny × $Nz, largest spacing $(spacing / 1e3) km"
 
-bathymetry = Metadatum(:bottom_height; dataset = ETOPO2022(), dir_kw...)
+# GEBCO 2026 (15″; includes IBCAO for the Arctic). First run downloads ~7.5 GB, and regridding a new grid
+# needs ~55 GB of memory (the global file is read in full); the result is cached, so later runs are quick.
+bathymetry = Metadatum(:bottom_height; dataset = GEBCO2026(), dir_kw...)
 bottom_height = regrid_bathymetry(underlying_grid, bathymetry;
                                   minimum_depth = 15,
                                   interpolation_passes = 2,
