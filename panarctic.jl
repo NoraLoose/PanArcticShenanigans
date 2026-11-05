@@ -150,7 +150,8 @@ sea_ice = sea_ice_simulation(grid, ocean; clock = Clock(time = start_time), adve
 
 # uᶠ, vᶠ are already rotated into the grid frame (above), so tell set! not to rotate them again:
 # since Oceananigans 0.116 (#6316) it treats velocities as east/north on immersed curvilinear grids too.
-set!(ocean.model, T = Tᵉˣᵗ[2], S = Sᵉˣᵗ[2], u = uᶠ[2], v = vᶠ[2], η = ηᵉˣᵗ[2], intrinsic_velocities = true)   # [2]: start_date
+n₀ = start_index   # start_date in dates
+set!(ocean.model, T = Tᵉˣᵗ[n₀], S = Sᵉˣᵗ[n₀], u = uᶠ[n₀], v = vᶠ[n₀], η = ηᵉˣᵗ[n₀], intrinsic_velocities = true)
 set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = start_date, dataset, region, dir_kw...),
                     ℵ = Metadatum(:sea_ice_concentration; date = start_date, dataset, region, dir_kw...))
 

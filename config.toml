@@ -14,7 +14,7 @@ Nz         = 20     # vertical levels
 depth      = 5000   # maximum depth (m)
 
 [time]
-start_date = 1993-01-01   # initial condition (GLORYS); the run starts at noon. GLORYS is loaded from the day before to the day after the run
+start_date = 1993-01-01   # initial condition (GLORYS); the run starts at noon. GLORYS is loaded from the day before to the day after the run (where available)
 dt_minutes = 10           # time step
 stop_hours = 120          # run length (120 h = 5 days; e.g. 3 for a quick check)
 
