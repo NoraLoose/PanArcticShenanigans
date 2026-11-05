@@ -306,7 +306,7 @@ end
 # record runs three days past the run, so that the JRA55 windows in memory stay inside it.
 
 jra55 = if config["atmosphere"]["jra55"] == "multi_year"
-    (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end] + Day(3))
+    (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end] + Day(1))
 elseif config["atmosphere"]["jra55"] == "repeat_year"
     (; dataset = RepeatYearJRA55())
 else
