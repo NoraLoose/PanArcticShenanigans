@@ -303,7 +303,7 @@ end
 
 # JRA55 for the run's own dates, so the winds match the GLORYS initial and boundary data ("multi_year"),
 # or the 1990–91 repeat year whatever the start date ("repeat_year"). The run ends 12 h after dates[end],
-# record runs three days past the run, so that the JRA55 windows in memory stay inside it.
+# so the multi-year records needs to run a day past it: with Cyclical indexing, forcing past the last record would otherwise wrap back to the first.
 
 jra55 = if config["atmosphere"]["jra55"] == "multi_year"
     (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end] + Day(1))
