@@ -5,7 +5,7 @@ include("config.jl")
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
-using NumericalEarth.DataWrangling: GEBCO2026   # not exported by NumericalEarth
+using NumericalEarth.DataWrangling: GEBCO2026, all_dates   # not exported by NumericalEarth
 using Dates, CUDA
 using CopernicusMarine   # enables the GLORYS download extension
 
@@ -50,12 +50,22 @@ grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height); a
 
 # ## GLORYS dates and region
 #
-# Daily means (centred at noon) from the start date to the end of the run.
+# Daily means (centred at noon), with one extra day before the start date and after the end of the run as
+# margin, where GLORYS has them (it starts on 1993-01-01). Time counts from 00:00 on dates[1], and the run
+# starts at noon on the start date, dates[start_index].
 
+dataset    = GLORYSDaily()
+available  = all_dates(dataset, :temperature)
 start_date = DateTime(config["time"]["start_date"])
 run_days   = ceil(Int, config["time"]["stop_hours"] / 24)
-dates      = start_date : Day(1) : start_date + Day(max(run_days, 1))
-dataset = GLORYSDaily()
+dates      = max(start_date - Day(1), first(available)) : Day(1) : min(start_date + Day(max(run_days, 1) + 1), last(available))
+start_index = findfirst(==(start_date), dates)
+isnothing(start_index) && error("start_date $start_date is outside the GLORYS record ($(first(available)) to $(last(available))).")
+start_time  = (start_index - 1) * days + 12hours
+last_noon   = (length(dates) - 1) * days + 12hours
+start_time + config["time"]["stop_hours"] * hours ≤ last_noon ||
+    error("The run ends after the last GLORYS daily mean ($(last(available))); use an earlier start_date or a shorter run.")
+
 region  = BoundingBox(longitude = (-180, 180), latitude = (φ_south, 90))
 
 # GLORYS free surface on the model grid. Used by panarctic.jl and plotting/glorys_free_surface.jl,

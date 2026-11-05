@@ -134,6 +134,7 @@ closure = CATKEVerticalDiffusivity()
 time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)
 
 ocean = ocean_simulation(grid;
+                         clock = Clock(time = start_time),
                          free_surface = SplitExplicitFreeSurface(grid; cfl = 0.7, fixed_Δt = Δt),
                          momentum_advection = WENOVectorInvariant(; order=5, time_discretization),
                          tracer_advection = WENO(; order=7, time_discretization, minimum_buffer_upwind_order=1),
@@ -143,15 +144,16 @@ ocean = ocean_simulation(grid;
                                                 T = T_obcs, S = S_obcs,
                                                 V = V_obcs))
 
-sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order = 5))   # EVP dynamics (default) and ice advection
+sea_ice = sea_ice_simulation(grid, ocean; clock = Clock(time = start_time), advection = WENO(order = 5))   # EVP dynamics (default) and ice advection
 
 # ## Initial conditions: GLORYS (ocean and sea ice)
 
 # uᶠ, vᶠ are already rotated into the grid frame (above), so tell set! not to rotate them again:
 # since Oceananigans 0.116 (#6316) it treats velocities as east/north on immersed curvilinear grids too.
-set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1], η = ηᵉˣᵗ[1], intrinsic_velocities = true)
-set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = dates[1], dataset, region, dir_kw...),
-                    ℵ = Metadatum(:sea_ice_concentration; date = dates[1], dataset, region, dir_kw...))
+n₀ = start_index   # start_date in dates
+set!(ocean.model, T = Tᵉˣᵗ[n₀], S = Sᵉˣᵗ[n₀], u = uᶠ[n₀], v = vᶠ[n₀], η = ηᵉˣᵗ[n₀], intrinsic_velocities = true)
+set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = start_date, dataset, region, dir_kw...),
+                    ℵ = Metadatum(:sea_ice_concentration; date = start_date, dataset, region, dir_kw...))
 
 # GLORYS sea-ice fields are NaN on land and open water; after interpolation make them consistent:
 # concentration in [0, 1], and thickness and concentration either both zero or both positive.
@@ -193,7 +195,8 @@ end
 # ## Atmosphere and coupled model
 
 # JRA55 for the run's own dates, so the winds match the GLORYS initial and boundary data ("multi_year"),
-# or the 1990–91 repeat year whatever the start date ("repeat_year", e.g. for spin-ups).
+# or the 1990–91 repeat year whatever the start date ("repeat_year"). Same dates as GLORYS (including the margin
+# days), so its time also counts from 00:00 on dates[1].
 
 jra55 = if config["atmosphere"]["jra55"] == "multi_year"
     (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end])
@@ -206,11 +209,16 @@ end
 atmosphere    = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...)
 radiation     = JRA55PrescribedRadiation(arch; jra55..., dir_kw...)
 land          = JRA55PrescribedLand(grid; jra55..., dir_kw...)
-coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation)
+
+for component in (atmosphere, radiation, land)
+    component.clock.time = start_time
+end
+
+coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation, clock = Clock(time = start_time))
 
 # ## Simulation
 
-stop_time = config["time"]["stop_hours"] * hours
+stop_time = start_time + config["time"]["stop_hours"] * hours
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 wall_time = Ref(time_ns())
