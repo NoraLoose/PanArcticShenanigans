@@ -302,7 +302,7 @@ end
 # ## Atmosphere and coupled model
 
 # JRA55 for the run's own dates, so the winds match the GLORYS initial and boundary data ("multi_year"),
-# or the 1990–91 repeat year whatever the start date ("repeat_year", e.g. for spin-ups). The multi-year
+# or the 1990–91 repeat year whatever the start date ("repeat_year"). The run ends 12 h after dates[end],
 # record runs three days past the run, so that the JRA55 windows in memory stay inside it.
 
 jra55 = if config["atmosphere"]["jra55"] == "multi_year"
