@@ -5,6 +5,7 @@ include("config.jl")
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
+using Oceananigans.Architectures: on_architecture
 using NumericalEarth.DataWrangling: GEBCO2026, all_dates   # not exported by NumericalEarth
 using Dates, CUDA
 using CopernicusMarine   # enables the GLORYS download extension
@@ -40,13 +41,16 @@ Nx, Ny = size(underlying_grid)[1:2]
 
 # GEBCO 2026 (15″; includes IBCAO for the Arctic). First run downloads ~7.5 GB, and regridding a new grid
 # needs ~55 GB of memory (the global file is read in full); the result is cached, so later runs are quick.
+# Regrid on a CPU copy of the grid: the whole file would otherwise go to the GPU (~28 GB, too much for 40 GB cards).
+# The cache does not depend on the architecture, so CPU and GPU runs share it.
 bathymetry = Metadatum(:bottom_height; dataset = GEBCO2026(), dir_kw...)
-bottom_height = regrid_bathymetry(underlying_grid, bathymetry;
+bottom_height = regrid_bathymetry(on_architecture(CPU(), underlying_grid), bathymetry;
                                   minimum_depth = 15,
                                   interpolation_passes = 2,
                                   major_basins = 1)
 
-grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height); active_cells_map = true)
+grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(Array(interior(bottom_height, :, :, 1)));
+                            active_cells_map = true)
 
 # ## GLORYS dates and region
 #
