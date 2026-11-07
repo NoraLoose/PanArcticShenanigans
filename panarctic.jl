@@ -1,118 +1,26 @@
 # Pan-Arctic coupled ocean–sea ice simulation (test configuration).
 # Settings are read from a TOML file: `julia +1.13 --project=. panarctic.jl [config.toml]`. See README.
+# Figures and movies: scripts in plotting/ (one per figure).
 
-using Pkg
-Pkg.activate(".")
+include("setup.jl")
 
-using NumericalEarth, Oceananigans, Oceananigans.Units
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ, intrinsic_vector
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Architectures: on_architecture
 using NumericalEarth.DataWrangling: DatasetRestoring, UVelocity, VVelocity
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
-using Dates, CUDA, Printf
-using CopernicusMarine   # enables the GLORYS download extension
-using TOML
+using Printf
 using ClimaSeaIce: IncrementalRemapping
 
-config_file = isempty(ARGS) ? joinpath(@__DIR__, "config.toml") : ARGS[1]
-config = TOML.parsefile(config_file)
-@info "Settings from $config_file" config
-
-arch = config["architecture"] == "GPU" ? GPU() : CPU()
-
-# ## Grid
-#
-# Polar stereographic (LambertConformalConicGrid, λ₀ = −40°). Open boundaries on the Atlantic
-# (j = 1) and Pacific (j = Ny) edges; east/west edges are land. `spacing_km` is the largest
-# spacing (at the pole; cells shrink ~15% toward the Atlantic edge).
-
-Nz      = config["grid"]["Nz"]
-depth   = config["grid"]["depth"] * meters
-spacing = config["grid"]["spacing_km"] * kilometers
-z       = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
-
-x₁, x₂  = -3280e3, 3616e3   # west–east projected extent (m)
-y₁, y₂  = -4100e3, 2700e3   # south–north projected extent (m)
-underlying_grid = LambertConformalConicGrid(arch;
-                                            size               = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
-                                            x                  = (x₁, x₂),
-                                            y                  = (y₁, y₂),
-                                            central_longitude  = -40,   # λ₀: mid-Atlantic
-                                            standard_parallel  = 90,
-                                            latitude_of_origin = 90,
-                                            z,
-                                            halo = (7, 7, 7))
-φ_south = 43   # southern limit of GLORYS data (grid reaches 43.6°N)
-
-Nx, Ny = size(underlying_grid)[1:2]
-@info "Grid: $Nx × $Ny × $Nz, largest spacing $(spacing / 1e3) km"
-
-data_dir   = config["paths"]["data_dir"]
-dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
-output_dir = mkpath(config["paths"]["output_dir"])
-make_figures = config["output"]["figures"]   # bathymetry and grid-spacing PNGs
-make_movies  = config["output"]["movies"]    # GLORYS free-surface and results movies
-
-bathymetry = Metadatum(:bottom_height; dataset = ETOPO2022(), dir_kw...)
-bottom_height = regrid_bathymetry(underlying_grid, bathymetry;
-                                  minimum_depth = 15,
-                                  interpolation_passes = 2,
-                                  major_basins = 1)
-
-grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height); active_cells_map = true)
-
-using CairoMakie
-
-h_bottom = Array(interior(bottom_height, :, :, 1))
-h_bottom[h_bottom .≥ 0] .= NaN
-
-if make_figures
-    fig = Figure(size = (700, 600))
-    ax = Axis(fig[1, 1], xlabel = "grid i", ylabel = "grid j",
-              title = "Arctic bathymetry", aspect = DataAspect())
-    hm = heatmap!(ax, h_bottom, colormap = :deep, colorrange = (-depth, 0), nan_color = :gray80)
-    Colorbar(fig[1, 2], hm, label = "bottom height [m]")
-
-    save(joinpath(output_dir, "bathymetry.png"), fig)
-end
-
-if make_figures
-    Δx = Array(interior(compute!(Field(xspacings(underlying_grid, Center(), Center(), Center()))), :, :, 1)) ./ 1e3   # km
-    Δy = Array(interior(compute!(Field(yspacings(underlying_grid, Center(), Center(), Center()))), :, :, 1)) ./ 1e3   # km
-    dry = isnan.(h_bottom)
-    Δx[dry] .= NaN
-    Δy[dry] .= NaN
-
-    fig = Figure(size = (1000, 450))
-    ax1 = Axis(fig[1, 1], xlabel = "grid i", ylabel = "grid j", title = "Δx [km]", aspect = DataAspect())
-    hm1 = heatmap!(ax1, Δx, colormap = :viridis)
-    Colorbar(fig[1, 2], hm1)
-    ax2 = Axis(fig[1, 3], xlabel = "grid i", title = "Δy [km]", aspect = DataAspect())
-    hm2 = heatmap!(ax2, Δy, colormap = :viridis)
-    Colorbar(fig[1, 4], hm2)
-
-    save(joinpath(output_dir, "grid_spacing.png"), fig)
-end
-
 # ## GLORYS boundary data
-#
-# Daily means (centred at noon) from the start date to the end of the run.
-
-start_date = DateTime(config["time"]["start_date"])
-run_days   = ceil(Int, config["time"]["stop_hours"] / 24)
-dates      = start_date : Day(1) : start_date + Day(max(run_days, 1))
-dataset = GLORYSDaily()
-region  = BoundingBox(longitude = (-180, 180), latitude = (φ_south, 90))
 
 # T and S need full inpainting: capped inpainting leaves gaps in deep basins (Baffin Bay overturning, #2).
 Tᵉˣᵗ = FieldTimeSeries(Metadata(:temperature;  dates, dataset, region, dir_kw...), grid, time_indices_in_memory=length(dates))
 Sᵉˣᵗ = FieldTimeSeries(Metadata(:salinity;     dates, dataset, region, dir_kw...), grid, time_indices_in_memory=length(dates))
 uᵉˣᵗ = FieldTimeSeries(Metadata(:u_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 vᵉˣᵗ = FieldTimeSeries(Metadata(:v_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
-ηᵉˣᵗ = FieldTimeSeries(Metadata(:free_surface; dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
+ηᵉˣᵗ = glorys_free_surface()
 
 # Rotate GLORYS velocities from east/north into the grid frame.
 
@@ -138,23 +46,6 @@ for n in eachindex(uᵉˣᵗ.times)
     set!(vᶠ[n], compute!(Field(@at((Center, Face, Center), vᵉˣᵗ[n]))))
 end
 @info "Rotated GLORYS velocities into the grid frame and interpolated them to faces"
-
-if make_movies
-    iter = Observable(1)
-    ηv = @lift begin
-        η = Array(interior(ηᵉˣᵗ[$iter], :, :, 1))
-        η[isnan.(h_bottom)] .= NaN
-        η
-    end
-    fig = Figure(size = (700, 600))
-    ax  = Axis(fig[1, 1], xlabel = "grid i", ylabel = "grid j",
-               title = "GLORYS free surface", aspect = DataAspect())
-    hm  = heatmap!(ax, ηv, colormap = :balance, colorrange = (-1.5, 0.2), nan_color = :gray80)
-    Colorbar(fig[1, 2], hm, label = "Free surface [m]")
-    CairoMakie.record(fig, joinpath(output_dir, "arctic_free_surface.mp4"), 1:length(dates), framerate = 4) do i
-        iter[] = i
-    end
-end
 
 # ## Open boundary conditions
 #
@@ -239,11 +130,13 @@ end
 
 # ## Ocean and sea ice
 
+Δt      = config["time"]["dt_minutes"] * minutes
 closure = CATKEVerticalDiffusivity()
 time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)
 
 ocean = ocean_simulation(grid;
-                         free_surface = SplitExplicitFreeSurface(grid; substeps=30),
+                         clock = Clock(time = start_time),
+                         free_surface = SplitExplicitFreeSurface(grid; cfl = 0.7, fixed_Δt = Δt),
                          momentum_advection = WENOVectorInvariant(; order=5, time_discretization),
                          tracer_advection = WENO(; order=7, time_discretization, minimum_buffer_upwind_order=1),
                          closure,
@@ -252,14 +145,21 @@ ocean = ocean_simulation(grid;
                                                 T = T_obcs, S = S_obcs,
                                                 V = V_obcs))
 
-# EVP dynamics (default); incremental remapping of thickness and concentration, which needs forward-Euler steps
-sea_ice = sea_ice_simulation(grid, ocean; advection = IncrementalRemapping(), timestepper = :ForwardEuler)
+# EVP dynamics (default). Incremental remapping (Lipscomb & Hunke 2004) transports ice area and volume together, so
+# the thickness h = volume / area stays bounded where the concentration is small; it needs forward-Euler steps
+# (the NumericalEarth default) and an ice Courant number below one. WENO advected h and ℵ separately and inflated
+# h to hundreds of metres in nearly ice-free cells (#29).
+sea_ice = sea_ice_simulation(grid, ocean; clock = Clock(time = start_time),
+                             advection = IncrementalRemapping(), timestepper = :ForwardEuler)
 
 # ## Initial conditions: GLORYS (ocean and sea ice)
 
-set!(ocean.model, T = Tᵉˣᵗ[1], S = Sᵉˣᵗ[1], u = uᶠ[1], v = vᶠ[1], η = ηᵉˣᵗ[1])
-set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = dates[1], dataset, region, dir_kw...),
-                    ℵ = Metadatum(:sea_ice_concentration; date = dates[1], dataset, region, dir_kw...))
+# uᶠ, vᶠ are already rotated into the grid frame (above), so tell set! not to rotate them again:
+# since Oceananigans 0.116 (#6316) it treats velocities as east/north on immersed curvilinear grids too.
+n₀ = start_index   # start_date in dates
+set!(ocean.model, T = Tᵉˣᵗ[n₀], S = Sᵉˣᵗ[n₀], u = uᶠ[n₀], v = vᶠ[n₀], η = ηᵉˣᵗ[n₀], intrinsic_velocities = true)
+set!(sea_ice.model, h = Metadatum(:sea_ice_thickness;     date = start_date, dataset, region, dir_kw...),
+                    ℵ = Metadatum(:sea_ice_concentration; date = start_date, dataset, region, dir_kw...))
 
 # GLORYS sea-ice fields are NaN on land and open water; after interpolation make them consistent:
 # concentration in [0, 1], and thickness and concentration either both zero or both positive.
@@ -301,7 +201,8 @@ end
 # ## Atmosphere and coupled model
 
 # JRA55 for the run's own dates, so the winds match the GLORYS initial and boundary data ("multi_year"),
-# or the 1990–91 repeat year whatever the start date ("repeat_year", e.g. for spin-ups).
+# or the 1990–91 repeat year whatever the start date ("repeat_year"). Same dates as GLORYS (including the margin
+# days), so its time also counts from 00:00 on dates[1].
 
 jra55 = if config["atmosphere"]["jra55"] == "multi_year"
     (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end])
@@ -314,12 +215,16 @@ end
 atmosphere    = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...)
 radiation     = JRA55PrescribedRadiation(arch; jra55..., dir_kw...)
 land          = JRA55PrescribedLand(grid; jra55..., dir_kw...)
-coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation)
+
+for component in (atmosphere, radiation, land)
+    component.clock.time = start_time
+end
+
+coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation, clock = Clock(time = start_time))
 
 # ## Simulation
 
-Δt        = config["time"]["dt_minutes"] * minutes
-stop_time = config["time"]["stop_hours"] * hours
+stop_time = start_time + config["time"]["stop_hours"] * hours
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 wall_time = Ref(time_ns())
@@ -361,53 +266,14 @@ ocean_outputs = merge(ocean.model.tracers, (; 𝒱))
 sea_ice_outputs = (; he, uᵢ = sea_ice.model.velocities.u, vᵢ = sea_ice.model.velocities.v)
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
-                                            filename = joinpath(output_dir, "arctic_ocean_surface.jld2"),
+                                            filename = ocean_surface_file,
                                             indices = (:, :, grid.Nz-2),
                                             schedule = TimeInterval(1hours),
                                             overwrite_files = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
-                                              filename = joinpath(output_dir, "arctic_sea_ice_surface.jld2"),
+                                              filename = sea_ice_surface_file,
                                               schedule = TimeInterval(1hours),
                                               overwrite_files = true)
 
 run!(simulation)
-
-# ## Movie of SST, SSS, surface speed and ice volume
-
-if make_movies
-    To = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "T")
-    So = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "S")
-    Uo = FieldTimeSeries(joinpath(output_dir, "arctic_ocean_surface.jld2"),   "𝒱")
-    hi = FieldTimeSeries(joinpath(output_dir, "arctic_sea_ice_surface.jld2"), "he")
-
-    times = To.times
-    n = Observable(length(times))
-
-    title = @lift "Arctic — hour " * string(round(Int, times[$n] / hours))
-
-    Tₙ = @lift(To[$n])
-    Sₙ = @lift(So[$n])
-    Uₙ = @lift(Uo[$n])
-    hₙ = @lift(hi[$n])
-
-    fig = Figure(size = (1100, 1000))
-    fig[0, 1:4] = Label(fig, title, fontsize = 20, tellwidth = false)
-
-    ax = Axis(fig[1, 1], ylabel = "grid j", aspect = DataAspect())
-    hm_T = heatmap!(ax, Tₙ, colormap = :thermal, colorrange = (-2, 8), nan_color = :gray80)
-    ax = Axis(fig[1, 3], aspect = DataAspect())
-    hm_S = heatmap!(ax, Sₙ, colormap = :haline, colorrange = (32.5, 35.5), nan_color = :gray80)
-    ax = Axis(fig[2, 1], xlabel = "grid i", ylabel = "grid j", aspect = DataAspect())
-    hm_U = heatmap!(ax, Uₙ, colormap = Reverse(:solar), colorrange = (0, 0.5), nan_color = :gray80)
-    ax = Axis(fig[2, 3], xlabel = "grid i", aspect = DataAspect())
-    hm_h = heatmap!(ax, hₙ, colormap = Reverse(:blues), colorrange = (0.01, 1.5), lowclip = :gray80)
-    Colorbar(fig[1, 2], hm_T, label = "SST [°C]")
-    Colorbar(fig[1, 4], hm_S, label = "SSS [psu]")
-    Colorbar(fig[2, 2], hm_U, label = "Surface speed [ms⁻¹]")
-    Colorbar(fig[2, 4], hm_h, label = "ice volume per area [m]")
-
-    CairoMakie.record(fig, joinpath(output_dir, "arctic_sea.mp4"), 1:length(times), framerate = 4) do i
-        n[] = i
-    end
-end
