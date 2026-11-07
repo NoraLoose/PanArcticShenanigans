@@ -11,6 +11,7 @@ using Oceananigans.Architectures: on_architecture
 using NumericalEarth.DataWrangling: DatasetRestoring, UVelocity, VVelocity
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
 using Printf
+using ClimaSeaIce: IncrementalRemapping
 
 # ## GLORYS boundary data
 
@@ -144,7 +145,12 @@ ocean = ocean_simulation(grid;
                                                 T = T_obcs, S = S_obcs,
                                                 V = V_obcs))
 
-sea_ice = sea_ice_simulation(grid, ocean; clock = Clock(time = start_time), advection = WENO(order = 5))   # EVP dynamics (default) and ice advection
+# EVP dynamics (default). Incremental remapping (Lipscomb & Hunke 2004) transports ice area and volume together, so
+# the thickness h = volume / area stays bounded where the concentration is small; it needs forward-Euler steps
+# (the NumericalEarth default) and an ice Courant number below one. WENO advected h and ℵ separately and inflated
+# h to hundreds of metres in nearly ice-free cells (#29).
+sea_ice = sea_ice_simulation(grid, ocean; clock = Clock(time = start_time),
+                             advection = IncrementalRemapping(), timestepper = :ForwardEuler)
 
 # ## Initial conditions: GLORYS (ocean and sea ice)
 
