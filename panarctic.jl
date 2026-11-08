@@ -107,6 +107,10 @@ V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
     south = GravityWaveRadiationBoundaryCondition(atlantic_V_obc, discrete_form = true, parameters = (v = vᶠ, η = ηᵉˣᵗ)),
     north = GravityWaveRadiationBoundaryCondition(pacific_V_obc,  discrete_form = true, parameters = (v = vᶠ, η = ηᵉˣᵗ)))
 
+# GLORYS's net transport per edge, the hybrid condition (replaces V_obcs when barotropic = "hybrid"), and the hourly
+# transport monitor
+include("open_boundary_transport.jl")
+
 # ## Sponge (optional, off by default)
 #
 # Gaussian rim on the open edges. Tracers relax over 1 day, velocities over 20 minutes.
@@ -253,6 +257,7 @@ function ice_progress(sim)
     return nothing
 end
 add_callback!(simulation, ice_progress, TimeInterval(1hours))
+add_callback!(simulation, transport_monitor, TimeInterval(1hours))
 
 # ## Output: hourly fields near the surface
 

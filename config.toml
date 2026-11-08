@@ -30,4 +30,6 @@ velocity_inflow_days      = 1    # oblique radiation on u, v: nudging timescale 
 tracer_inflow_km_atlantic = 20   # T, S reservoir inflow relaxation length; Atlantic side
 tracer_inflow_km_pacific  = 20   # T, S reservoir inflow relaxation length; Pacific side
 sponge = false                # GLORYS restoring in a rim along the open edges; keep off in normal use, potentially useful for debugging
+barotropic = "flather"        # barotropic transport at the open edges: "flather", or "hybrid" (each edge's net to GLORYS's, then the total to total_net_inflow_Sv)
+total_net_inflow_Sv = "glorys" # hybrid only: net inflow through both edges together, in Sv, or "glorys" for GLORYS's own
 
