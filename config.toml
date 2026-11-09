@@ -35,3 +35,7 @@ total_net_inflow_Sv = "glorys_transport" # constrained schemes: total net inflow
 per_edge_target = "native"    # constrained schemes: each edge's net transport from GLORYS on its own grid ("native") or after interpolation ("interpolated")
 volume_nudging_days = 14      # "glorys_transport" only: time scale for the model's volume to follow GLORYS's (0: off)
 
+[diagnostics]
+sections = true               # hourly gateway transports (section_monitor.csv), daily means near the Atlantic edge and of the barotropic flow
+edge_section_rows = 8         # rows inside the Atlantic edge saved as daily means (atlantic_edge_daily.jld2)
+

@@ -260,6 +260,10 @@ add_callback!(simulation, ice_progress, TimeInterval(1hours))
 add_callback!(simulation, transport_monitor, TimeInterval(1hours))
 add_callback!(simulation, update_surface_freshwater!, IterationInterval(1))
 
+# Gateway transports (Fram Strait, Barents Sea Opening, Svinøy, Lofoten slope, Davis Strait), daily means near the
+# Atlantic edge and of the barotropic flow
+get(get(config, "diagnostics", Dict()), "sections", false) && include("section_monitor.jl")
+
 # ## Output: hourly fields near the surface
 
 u, v, w = ocean.model.velocities
