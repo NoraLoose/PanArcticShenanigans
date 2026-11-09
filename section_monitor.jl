@@ -26,6 +26,11 @@ gateway_sections = [
     ("lofoten", [(9.25, 69.71), (13.31, 67.88)],              "north-east"), # Norwegian slope current off Lofoten: the old
                                                                              # jet band (v-faces i = 335–352, j = 175 at 15 km)
     ("davis",   [(-63.0, 66.6), (-52.5, 66.6)],               "north"),   # Davis Strait, Baffin Island to Greenland
+    ("bering",  [(-170.3, 66.2), (-167.6, 65.55)],            "north"),   # Bering Strait, Cape Dezhnev to Cape Prince of Wales
+    # Atlantic inflow to the Nordic Seas, Greenland to Scotland: how it splits between the three passages
+    ("denmark", [(-34.5, 67.8), (-23.8, 65.6)],               "north-east"), # Denmark Strait, near the Látrabjarg line
+    ("iceland_faroe",  [(-15.0, 64.8), (-6.9, 62.15)],        "north-east"), # Iceland–Faroe Ridge
+    ("faroe_shetland", [(-6.9, 62.05), (-1.2, 60.4)],         "north-east"), # Faroe–Shetland Channel
 ]
 
 # ## Geometry: corners, the staircase path and its faces

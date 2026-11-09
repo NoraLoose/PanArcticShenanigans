@@ -5,8 +5,8 @@
 # Each argument is an output directory (its name is used as the label). Writes section_comparison.png in the current
 # directory and prints a table: for each gateway, the rms error of the net transport against GLORYS (interpolated onto
 # the model's faces, so the geometry is the same) and of the transport-weighted temperature of the inflow, over the run
-# and over its last 5 days. Positive directions: Fram north, Barents Sea Opening east, Svinøy and Lofoten north-east,
-# Davis north.
+# and over its last 5 days. Positive directions: Fram, Davis and Bering north; Barents Sea Opening east; Denmark Strait,
+# Iceland–Faroe, Faroe–Shetland, Svinøy and Lofoten north-east.
 
 using CairoMakie, Printf, Statistics
 
@@ -28,11 +28,13 @@ function colour(name)                 # by the scheme in the run's name, e.g. "3
 end
 
 gateways = unique(first(split(k, "_net_")) for k in keys(data[1][2]) if occursin("_net_model_Sv", k))
-order = ["fram", "bso", "svinoy", "lofoten", "davis"]
+order = ["denmark", "iceland_faroe", "faroe_shetland", "svinoy", "lofoten", "bso", "fram", "davis", "bering"]
 gateways = sort(gateways, by = g -> something(findfirst(==(g), order), 99))
 titles = Dict("fram" => "Fram Strait (north)", "bso" => "Barents Sea Opening (east)",
               "svinoy" => "Svinøy section (north-east)", "lofoten" => "Lofoten slope (north-east)",
-              "davis" => "Davis Strait (north)")
+              "davis" => "Davis Strait (north)", "bering" => "Bering Strait (north)",
+              "denmark" => "Denmark Strait (north-east)", "iceland_faroe" => "Iceland–Faroe (north-east)",
+              "faroe_shetland" => "Faroe–Shetland (north-east)")
 
 rms(a) = sqrt(mean(abs2, filter(isfinite, a)))
 last_days(h, n = 5) = h .≥ h[end] - 24n
