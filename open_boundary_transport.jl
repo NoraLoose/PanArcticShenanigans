@@ -2,8 +2,8 @@
 # after V_obcs is built. Three parts:
 #
 # 1. GLORYS's net transport through each edge, from the boundary data, at each daily snapshot.
-# 2. With `barotropic = "hybrid"` in [boundaries]: the hybrid condition replaces plain Flather on the barotropic
-#    transport. On each edge, Flather about ηᵉˣᵗ + C, with C chosen every barotropic substep so that the edge's net
+# 2. With `barotropic = "hybrid"` in [boundaries] (or "total_only", "clamped" for comparison; see section 2): the
+#    hybrid condition replaces plain Flather on the barotropic transport. On each edge, Flather about ηᵉˣᵗ + C, with C chosen every barotropic substep so that the edge's net
 #    transport equals GLORYS's (a uniform η shift; the transport changes in proportion to √(gH)). Then one uniform
 #    velocity w on both edges sets the total net inflow, chosen by `total_net_inflow_Sv`:
 #      "glorys_volume"  the model's volume changes at the rate GLORYS's does over the same wet domain:
@@ -15,8 +15,8 @@
 #    A datum difference between GLORYS's and the model's free surface then moves no water, and the throughflow
 #    follows GLORYS's. Tested in panarctic-tools/sandbox/obc-vortex.
 # 3. An hourly monitor, transport_monitor.csv in the output directory: model and GLORYS net transport per edge, the
-#    hybrid's total, the surface freshwater volume flux (positive into the ocean), the area-weighted mean free surface
-#    and the residual of the volume budget.
+#    target total, the surface freshwater volume flux (positive into the ocean), the area-weighted mean free surface
+#    of the model and of GLORYS, and the residual of the volume budget.
 
 using Oceananigans.Grids: static_column_depthᶜᶠᵃ, static_column_depthᶜᶜᵃ
 using Oceananigans.Operators: Δxᶜᶠᶜ, Azᶜᶜᶜ
@@ -73,11 +73,19 @@ end
 # The value of a series defined between snapshots (length N - 1) at time t
 @inline between_snapshots(series, t, t₀, Δt) = @inbounds series[clamp(floor(Int, (t - t₀) / Δt) + 1, 1, length(series))]
 
-# ## 2. The hybrid condition
+# ## 2. Constrained conditions on the barotropic transport
+#
+# Three methods share one boundary function, all with Flather underneath (V = Vᵉˣᵗ ∓ c(ηᵇ − ηᵉˣᵗ), c = √(gH)):
+#   hybrid      each edge's net set to GLORYS's by a uniform η shift C (∝ √(gH)), then the total by w
+#   total_only  Flather on each edge, then the total by w (NEMO `ln_vol`, ROMS `VolCons`)
+#   clamped     V = Vᵉˣᵗ (ηᵉˣᵗ replaced by ηᵇ, so the Flather term vanishes), then the total by w (MITgcm prescribed
+#               velocities with `useOBCSbalance`)
+# w is one uniform velocity on every open face (∝ H), removed from the inflow, that brings the total net inflow to the
+# target set by `total_net_inflow_Sv`.
 
-# C for one edge: the √(gH)-weighted mean of ηᵇ − ηᵉˣᵗ along it. jᶠ: the boundary face row; jᵢ, jₕ: the interior and
-# halo rows of η either side of it; jₑ: the row of ηᵉˣᵗ used by atlantic_V_obc / pacific_V_obc.
-@inline function edge_offset(jᶠ, jᵢ, jₕ, jₑ, grid, clock, fields, ηᵉˣᵗ)
+# Sums along one edge: Σ c (ηᵇ − ηᵉˣᵗ) Δx and Σ c Δx. jᶠ: the boundary face row; jᵢ, jₕ: the interior and halo rows of
+# η either side of it; jₑ: the row of ηᵉˣᵗ used by atlantic_V_obc / pacific_V_obc.
+@inline function edge_mismatch(jᶠ, jᵢ, jₕ, jₑ, grid, clock, fields, ηᵉˣᵗ)
     t  = Oceananigans.Units.Time(clock.time)
     η  = fields.η
     kη = grid.Nz + 1
@@ -91,26 +99,38 @@ end
         num += ifelse(H > 0, c * (ηᵇ - @inbounds(ηᵉˣᵗ[i′, jₑ, 1, t])) * Δx, zero(grid))
         den += c * Δx
     end
-    return ifelse(den > 0, num / den, zero(grid))
+    return num, den
 end
 
-@inline function hybrid_velocity(t, p)
+# (C_atlantic, C_pacific, w)
+@inline function constraints(grid, clock, fields, p)
+    t = clock.time
+    nA, dA = edge_mismatch(1, 1, 0, 1, grid, clock, fields, p.η)
+    nP, dP = edge_mismatch(grid.Ny + 1, grid.Ny, grid.Ny + 1, grid.Ny, grid, clock, fields, p.η)
+    CA = ifelse(p.edge_shift & (dA > 0), nA / dA, zero(grid))
+    CP = ifelse(p.edge_shift & (dP > 0), nP / dP, zero(grid))
+    VA = in_time(p.atlantic, t, p.t₀, p.Δt)                     # GLORYS: into the domain
+    VP = in_time(p.pacific,  t, p.t₀, p.Δt)                     # GLORYS: out of the domain
+    inflow = ifelse(p.clamped, VA - VP, (VA - nA + CA * dA) - (VP + nP - CP * dP))
     target = ifelse(p.follow_volume, between_snapshots(p.rate, t, p.t₀, p.Δt) - @inbounds(p.freshwater[1]), p.target)
-    return ifelse(p.use_total, (in_time(p.net, t, p.t₀, p.Δt) - target) / p.area, zero(t))
+    w = ifelse(p.use_total, (inflow - target) / p.area, zero(grid))
+    return CA, CP, w
 end
 
-@inline function atlantic_V_hybrid(i, k, grid, clock, fields, p)
+@inline function atlantic_V_constrained(i, k, grid, clock, fields, p)
     V, ηᵉ = atlantic_V_obc(i, k, grid, clock, fields, p)
-    C = edge_offset(1, 1, 0, 1, grid, clock, fields, p.η)
-    H = max(static_column_depthᶜᶠᵃ(i, 1, grid), zero(grid))
-    return (V - H * hybrid_velocity(clock.time, p), ηᵉ + C)
+    CA, CP, w = constraints(grid, clock, fields, p)
+    H  = max(static_column_depthᶜᶠᵃ(i, 1, grid), zero(grid))
+    ηᵇ = @inbounds (fields.η[i, 0, grid.Nz + 1] + fields.η[i, 1, grid.Nz + 1]) / 2
+    return (V - H * w, ifelse(p.clamped, ηᵇ, ηᵉ + CA))
 end
 
-@inline function pacific_V_hybrid(i, k, grid, clock, fields, p)
+@inline function pacific_V_constrained(i, k, grid, clock, fields, p)
     V, ηᵉ = pacific_V_obc(i, k, grid, clock, fields, p)
-    C = edge_offset(grid.Ny + 1, grid.Ny, grid.Ny + 1, grid.Ny, grid, clock, fields, p.η)
-    H = max(static_column_depthᶜᶠᵃ(i, grid.Ny + 1, grid), zero(grid))
-    return (V + H * hybrid_velocity(clock.time, p), ηᵉ + C)
+    CA, CP, w = constraints(grid, clock, fields, p)
+    H  = max(static_column_depthᶜᶠᵃ(i, grid.Ny + 1, grid), zero(grid))
+    ηᵇ = @inbounds (fields.η[i, grid.Ny, grid.Nz + 1] + fields.η[i, grid.Ny + 1, grid.Nz + 1]) / 2
+    return (V + H * w, ifelse(p.clamped, ηᵇ, ηᵉ + CP))
 end
 
 barotropic_scheme = get(bc, "barotropic", "flather")
@@ -131,20 +151,23 @@ function update_surface_freshwater!(sim)
     return nothing
 end
 
-if barotropic_scheme == "hybrid"
-    p_hybrid = (v = vᶠ, η = ηᵉˣᵗ, net = on_architecture(arch, glorys_net), rate = on_architecture(arch, glorys_volume_rate),
-                freshwater = surface_freshwater, t₀ = t₀_obc, Δt = Δt_obc, area = open_area, target = target_inflow,
-                follow_volume, use_total)
+constrained_schemes = ("hybrid", "total_only", "clamped")
+if barotropic_scheme in constrained_schemes
+    p_constrained = (v = vᶠ, η = ηᵉˣᵗ, atlantic = on_architecture(arch, atlantic_glorys),
+                     pacific = on_architecture(arch, pacific_glorys), rate = on_architecture(arch, glorys_volume_rate),
+                     freshwater = surface_freshwater, t₀ = t₀_obc, Δt = Δt_obc, area = open_area, target = target_inflow,
+                     follow_volume, use_total, edge_shift = barotropic_scheme == "hybrid",
+                     clamped = barotropic_scheme == "clamped")
     V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
-        south = GravityWaveRadiationBoundaryCondition(atlantic_V_hybrid, discrete_form = true, parameters = p_hybrid),
-        north = GravityWaveRadiationBoundaryCondition(pacific_V_hybrid,  discrete_form = true, parameters = p_hybrid))
-    @info "Barotropic transport: hybrid (each edge's net to GLORYS's; total: " *
+        south = GravityWaveRadiationBoundaryCondition(atlantic_V_constrained, discrete_form = true, parameters = p_constrained),
+        north = GravityWaveRadiationBoundaryCondition(pacific_V_constrained,  discrete_form = true, parameters = p_constrained))
+    @info "Barotropic transport: $barotropic_scheme (total: " *
           (follow_volume ? "the model's volume follows GLORYS's)" :
            use_total ? @sprintf("%.3f Sv)", target_inflow / 1e6) : "GLORYS's own)")
 elseif barotropic_scheme == "flather"
     @info "Barotropic transport: Flather"
 else
-    error("Unknown barotropic scheme \"$barotropic_scheme\"; use \"flather\" or \"hybrid\"")
+    error("Unknown barotropic scheme \"$barotropic_scheme\"; use \"flather\", \"hybrid\", \"total_only\" or \"clamped\"")
 end
 
 # ## 3. Hourly transport monitor
@@ -152,7 +175,8 @@ end
 monitor_file = joinpath(output_dir, "transport_monitor.csv")
 open(monitor_file, "w") do io
     println(io, "hour,atlantic_model_Sv,atlantic_glorys_Sv,pacific_model_Sv,pacific_glorys_Sv,net_model_Sv,",
-                "net_glorys_Sv,hybrid_total_Sv,glorys_volume_rate_Sv,surface_freshwater_Sv,eta_mean_m,budget_residual_Sv")
+                "net_glorys_Sv,target_total_Sv,glorys_volume_rate_Sv,surface_freshwater_Sv,eta_mean_m,glorys_eta_mean_m,",
+                "budget_residual_Sv")
 end
 previous_monitor = Ref((t = NaN, η = NaN))
 
@@ -166,16 +190,18 @@ function transport_monitor(sim)
     freshwater = sum(Array(interior(surface_freshwater_flux(model)))[:, :, 1] .* wet_area)
     mean_η = sum(η .* wet_area) / domain_area
     rate = between_snapshots(glorys_volume_rate, t, t₀_obc, Δt_obc)
-    total = follow_volume ? rate - freshwater : use_total ? target_inflow : in_time(glorys_net, t, t₀_obc, Δt_obc)
+    total = barotropic_scheme == "flather" ? NaN :
+            follow_volume ? rate - freshwater : use_total ? target_inflow : in_time(glorys_net, t, t₀_obc, Δt_obc)
     # A d⟨η⟩/dt over the last hour minus what the boundaries and the surface supplied now (zero if the budget closes)
     residual = domain_area * (mean_η - previous_monitor[].η) / (t - previous_monitor[].t) - (atlantic - pacific + freshwater)
     previous_monitor[] = (; t, η = mean_η)
     open(monitor_file, "a") do io
-        @printf(io, "%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.5f,%.4f\n", (t - start_time) / 3600,
+        @printf(io, "%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.5f,%.5f,%.4f\n", (t - start_time) / 3600,
                 atlantic / 1e6, in_time(atlantic_glorys, t, t₀_obc, Δt_obc) / 1e6,
                 pacific / 1e6, in_time(pacific_glorys, t, t₀_obc, Δt_obc) / 1e6,
                 (atlantic - pacific) / 1e6, in_time(glorys_net, t, t₀_obc, Δt_obc) / 1e6,
-                total / 1e6, rate / 1e6, freshwater / 1e6, mean_η, residual / 1e6)
+                total / 1e6, rate / 1e6, freshwater / 1e6, mean_η, in_time(glorys_mean_η, t, t₀_obc, Δt_obc),
+                residual / 1e6)
     end
     return nothing
 end
