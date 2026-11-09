@@ -61,6 +61,40 @@ for (name, d) in data
 end
 println("(T: mean over the last 5 days of the model minus GLORYS transport-weighted temperature of the inflow)")
 
+# Over the hours every run covers, so runs of different lengths (or one still running) are compared like for like:
+# daily means against GLORYS, and each run against the first one, hourly and as daily means.
+common = minimum(d["hour"][end] for (_, d) in data)
+ndays  = floor(Int, common / 24)
+covered(d) = d["hour"] .≤ common
+function daily_means(d, column)
+    h, x = d["hour"], d[column]
+    return [mean(x[(h .≥ 24(n - 1)) .& (h .< 24n)]) for n in 1:ndays]
+end
+@printf("\nOver the first %.0f hours (%d whole days), net transport [Sv]: rms of daily means against GLORYS", common, ndays)
+length(data) > 1 && @printf("; rms difference from %s, hourly / daily means", data[1][1])
+println()
+@printf("%-16s", "gateway")
+for (name, _) in data
+    @printf(" %14s", first(name, 14))
+end
+for (name, _) in data[2:end]
+    @printf(" %22s", first("− " * data[1][1], 22))
+end
+println()
+for g in gateways
+    @printf("%-16s", g)
+    for (_, d) in data
+        @printf(" %14.2f", ndays > 0 ? rms(daily_means(d, "$(g)_net_model_Sv") .- daily_means(d, "$(g)_net_glorys_Sv")) : NaN)
+    end
+    d₁ = data[1][2]
+    for (_, d) in data[2:end]
+        hourly = d["$(g)_net_model_Sv"][covered(d)] .- d₁["$(g)_net_model_Sv"][covered(d₁)]
+        daily  = ndays > 0 ? daily_means(d, "$(g)_net_model_Sv") .- daily_means(d₁, "$(g)_net_model_Sv") : [NaN]
+        @printf(" %10.2f / %9.2f", rms(hourly), rms(daily))
+    end
+    println()
+end
+
 n = length(gateways)
 fig = Figure(size = (1500, 380 * n), fontsize = 14)
 axes = []
