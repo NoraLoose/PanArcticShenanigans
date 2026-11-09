@@ -202,6 +202,9 @@ else
     end
 end
 
+# Balanced barotropic initial state ([initialization] balance = "projection" or "full")
+haskey(config, "initialization") && include("balanced_initialization.jl")
+
 # Barotropic vorticity tendency of the initial state ([diagnostics] initial_vorticity = true, or "only" to stop here)
 get(get(config, "diagnostics", Dict()), "initial_vorticity", false) != false && include("initial_vorticity.jl")
 
