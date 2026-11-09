@@ -24,6 +24,9 @@
 using Oceananigans.Grids: static_column_depthᶜᶠᵃ, static_column_depthᶜᶜᵃ
 using Oceananigans.Operators: Δxᶜᶠᶜ, Azᶜᶜᶜ
 
+# The ocean model inside a coupled simulation, or the model of an ocean-only one (the rest-state test)
+ocean_model_of(sim) = hasproperty(sim.model, :ocean) ? sim.model.ocean.model : sim.model
+
 # ## 1. Edge geometry and GLORYS's net transport per edge
 
 edge_rows = (1, Ny + 1)
@@ -103,7 +106,7 @@ wet_area_device = on_architecture(arch, wet_area)
 surface_freshwater_flux(ocean_model) = NumericalEarth.Oceans.extract_freshwater_flux(ocean_model.tracers.S.boundary_conditions.top.condition)
 
 function update_surface_freshwater!(sim)
-    ocean_model = sim.model.ocean.model
+    ocean_model = ocean_model_of(sim)
     fill!(surface_freshwater, sum(interior(surface_freshwater_flux(ocean_model)) .* wet_area_device))
     mean_η = sum(interior(ocean_model.free_surface.displacement) .* wet_area_device) / domain_area
     isnan(model_mean_η₀[]) && (model_mean_η₀[] = mean_η)
@@ -146,7 +149,7 @@ end
 previous_monitor = Ref((t = NaN, η = NaN))
 
 function transport_monitor(sim)
-    model = sim.model.ocean.model
+    model = ocean_model_of(sim)
     t = model.clock.time
     V = Array(interior(model.free_surface.barotropic_velocities.V))[:, :, 1]
     η = Array(interior(model.free_surface.displacement))[:, :, 1]

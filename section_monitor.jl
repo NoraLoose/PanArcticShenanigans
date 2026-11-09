@@ -167,7 +167,7 @@ open(section_file, "w") do io
 end
 
 function section_monitor(sim)
-    model = sim.model.ocean.model
+    model = ocean_model_of(sim)
     t = model.clock.time
     u, v = cpu_array(model.velocities.u), cpu_array(model.velocities.v)
     T = masked_temperature(model.tracers.T)

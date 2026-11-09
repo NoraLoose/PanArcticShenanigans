@@ -55,6 +55,40 @@ for n in eachindex(uᵉˣᵗ.times)
 end
 @info "Rotated GLORYS velocities into the grid frame and interpolated them to faces"
 
+# ## Rest-state test (optional): [initialization] rest = "uniform" or "glorys"
+#
+# A check for motion made by the numerics alone (pressure gradients over sloping topography, partial cells, z-star in
+# thin columns). The ocean starts at rest (u = v = η = 0), the edges are held at zero velocity (the GLORYS boundary
+# velocities and η are set to zero, so use barotropic = "clamped" with a total of 0 Sv), and the run is ocean only: no
+# atmosphere and no sea-ice coupling, so no surface fluxes of heat, salt, freshwater or momentum. "uniform" also replaces
+# T and S by their mean on each level, so nothing should move at all; "glorys" keeps GLORYS's T and S, so whatever moves
+# is the adjustment to its density field.
+rest_state = get(get(config, "initialization", Dict()), "rest", "none")
+rest_state in ("none", "uniform", "glorys") || error("[initialization] rest must be \"uniform\" or \"glorys\" (or absent)")
+ocean_only = rest_state != "none"
+if ocean_only
+    get(config["initialization"], "balance", false) == false || error("[initialization] rest and balance cannot be combined")
+    for series in (uᵉˣᵗ, vᵉˣᵗ, uᶠ, vᶠ, ηᵉˣᵗ)
+        fill!(parent(series.data), 0)
+    end
+    if rest_state == "uniform"
+        rest_grid = on_architecture(CPU(), grid)
+        rest_wet = [!immersed_inactive_node(i, j, k, rest_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny, k in 1:Nz]
+        for (name, series) in (("T", Tᵉˣᵗ), ("S", Sᵉˣᵗ))
+            c₀ = Array(interior(series[start_index]))
+            profile = [count(rest_wet[:, :, k]) > 0 ? sum(c₀[:, :, k][rest_wet[:, :, k]]) / count(rest_wet[:, :, k]) : 0.0
+                       for k in 1:Nz]
+            uniform = repeat(reshape(profile, 1, 1, Nz), Nx, Ny, 1)
+            for n in eachindex(series.times)
+                set!(series[n], uniform)
+                fill_halo_regions!(series[n])
+            end
+            @info @sprintf("Rest-state test: %s uniform on each level, from %.3f (bottom) to %.3f (top)", name, profile[1], profile[end])
+        end
+    end
+    @warn "Rest-state test ($rest_state): starting at rest, edges at zero velocity, ocean only (no atmosphere or sea ice)"
+end
+
 # ## Open boundary conditions
 #
 # Velocities: oblique radiation (Raymond & Kuo 1984), nudged toward GLORYS on inflow, on both the normal (v)
@@ -201,53 +235,61 @@ get(get(config, "diagnostics", Dict()), "initial_vorticity", false) != false && 
 # or the 1990–91 repeat year whatever the start date ("repeat_year"). Same dates as GLORYS (including the margin
 # days), so its time also counts from 00:00 on dates[1].
 
-jra55 = if config["atmosphere"]["jra55"] == "multi_year"
-    (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end])
-elseif config["atmosphere"]["jra55"] == "repeat_year"
-    (; dataset = RepeatYearJRA55())
-else
-    error("Unknown JRA55 forcing \"$(config["atmosphere"]["jra55"])\"; use \"multi_year\" or \"repeat_year\"")
-end
-
-atmosphere    = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...)
-
-# Test of the initial adjustment: with `winds = false` in [atmosphere], the JRA55 winds are set to zero (heat and
-# freshwater fluxes still use the other JRA55 fields, with no wind in the bulk formulae). The whole record is held in
-# memory so that nothing is reloaded from file.
-if !get(config["atmosphere"], "winds", true)
-    atmosphere = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...,
-                                           time_indices_in_memory = length(atmosphere.velocities.u.times))
-    for u in atmosphere.velocities
-        fill!(parent(u.data), 0)
+if !ocean_only
+    jra55 = if config["atmosphere"]["jra55"] == "multi_year"
+        (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[end])
+    elseif config["atmosphere"]["jra55"] == "repeat_year"
+        (; dataset = RepeatYearJRA55())
+    else
+        error("Unknown JRA55 forcing \"$(config["atmosphere"]["jra55"])\"; use \"multi_year\" or \"repeat_year\"")
     end
-    @warn "JRA55 winds set to zero ([atmosphere] winds = false)"
-end
-radiation     = JRA55PrescribedRadiation(arch; jra55..., dir_kw...)
-land          = JRA55PrescribedLand(grid; jra55..., dir_kw...)
 
-for component in (atmosphere, radiation, land)
-    component.clock.time = start_time
-end
+    atmosphere    = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...)
 
-coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation, clock = Clock(time = start_time))
+    # Test of the initial adjustment: with `winds = false` in [atmosphere], the JRA55 winds are set to zero (heat and
+    # freshwater fluxes still use the other JRA55 fields, with no wind in the bulk formulae). The whole record is held in
+    # memory so that nothing is reloaded from file.
+    if !get(config["atmosphere"], "winds", true)
+        atmosphere = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...,
+                                               time_indices_in_memory = length(atmosphere.velocities.u.times))
+        for u in atmosphere.velocities
+            fill!(parent(u.data), 0)
+        end
+        @warn "JRA55 winds set to zero ([atmosphere] winds = false)"
+    end
+    radiation     = JRA55PrescribedRadiation(arch; jra55..., dir_kw...)
+    land          = JRA55PrescribedLand(grid; jra55..., dir_kw...)
+
+    for component in (atmosphere, radiation, land)
+        component.clock.time = start_time
+    end
+
+    coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation, clock = Clock(time = start_time))
+end
 
 # ## Simulation
 
 stop_time = start_time + config["time"]["stop_hours"] * hours
-simulation = Simulation(coupled_model; Δt, stop_time)
+simulation = if ocean_only    # the ocean simulation itself, with no coupling
+    ocean.Δt = Δt
+    ocean.stop_time = stop_time
+    ocean
+else
+    Simulation(coupled_model; Δt, stop_time)
+end
 
 wall_time = Ref(time_ns())
 
 function progress(sim)
-    ocean = sim.model.ocean
-    sea_ice = sim.model.sea_ice
-    T = ocean.model.tracers.T
-    S = ocean.model.tracers.S
-    u, v, w = ocean.model.velocities
-    h = sea_ice.model.ice_thickness
-    msg = @sprintf("time: %s, iter: %d, extrema(T, S): (%.1f, %.1f) °C (%.1f, %.1f) psu, extrema(u) (%.2e, %.2e, %.2e) max(h): %.2f m, wall: %s",
+    model = ocean_model_of(sim)
+    T = model.tracers.T
+    S = model.tracers.S
+    u, v, w = model.velocities
+    η = model.free_surface.displacement
+    ice = ocean_only ? "" : @sprintf(" max(h): %.2f m,", maximum(sim.model.sea_ice.model.ice_thickness))
+    msg = @sprintf("time: %s, iter: %d, extrema(T, S): (%.1f, %.1f) °C (%.1f, %.1f) psu, extrema(u) (%.2e, %.2e, %.2e) max|η|: %.3f m,%s wall: %s",
                    prettytime(sim), iteration(sim),
-                   extrema(T)..., extrema(S)..., maximum(abs, u), maximum(abs, v), maximum(abs, w), maximum(h),
+                   extrema(T)..., extrema(S)..., maximum(abs, u), maximum(abs, v), maximum(abs, w), maximum(abs, η), ice,
                    prettytime(1e-9 * (time_ns() - wall_time[])))
     @info msg
     wall_time[] = time_ns()
@@ -261,7 +303,7 @@ function ice_progress(sim)
     @info @sprintf("    ice: max |u| = %.2f m/s, max |v| = %.2f m/s", maximum(abs, uᵢ), maximum(abs, vᵢ))
     return nothing
 end
-add_callback!(simulation, ice_progress, TimeInterval(1hours))
+ocean_only || add_callback!(simulation, ice_progress, TimeInterval(1hours))
 add_callback!(simulation, transport_monitor, TimeInterval(1hours))
 add_callback!(simulation, update_surface_freshwater!, IterationInterval(1))
 
