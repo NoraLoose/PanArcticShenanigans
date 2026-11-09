@@ -19,7 +19,8 @@
 using Oceananigans.Operators: ∂xᶠᶜᶜ, ∂yᶜᶠᶜ, Δxᶠᶜᶜ, Δyᶜᶠᶜ, Δxᶜᶠᶜ, Δyᶠᶜᶜ, Azᶠᶠᶜ, Azᶜᶜᶜ, Δzᶠᶜᶜ, Δzᶜᶠᶜ
 using Oceananigans.Coriolis: x_f_cross_U, y_f_cross_U
 using Oceananigans.Grids: static_column_depthᶜᶜᵃ
-using CairoMakie, Statistics, JLD2
+using Oceananigans.OutputWriters: jldopen
+using CairoMakie, Statistics
 
 let model = ocean.model
     g        = model.free_surface.gravitational_acceleration
@@ -124,8 +125,13 @@ let model = ocean.model
             100 * 86400 * rms(dηdt), 100 * 86400 * rms(window(dηdt)),
             100 * 86400 * rms(smooth(dηdt)), 100 * 86400 * rms(window(smooth(dηdt))))
 
-    jldsave(joinpath(output_dir, "initial_vorticity.jld2"); fields..., dηdt, depth, bathymetry = bathymetry_source,
-            vertical = vertical_levels)
+    jldopen(joinpath(output_dir, "initial_vorticity.jld2"), "w") do file
+        for (name, a) in pairs(fields)
+            file[String(name)] = a
+        end
+        file["dηdt"], file["depth"] = dηdt, depth
+        file["bathymetry"], file["vertical"] = bathymetry_source, vertical_levels
+    end
 
     # Figure: Nordic Seas window
     fig = Figure(size = (1700, 1050), fontsize = 13)
