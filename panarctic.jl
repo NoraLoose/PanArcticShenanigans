@@ -202,6 +202,9 @@ else
     end
 end
 
+# Barotropic vorticity tendency of the initial state ([diagnostics] initial_vorticity = true, or "only" to stop here)
+get(get(config, "diagnostics", Dict()), "initial_vorticity", false) != false && include("initial_vorticity.jl")
+
 # ## Atmosphere and coupled model
 
 # JRA55 for the run's own dates, so the winds match the GLORYS initial and boundary data ("multi_year"),
