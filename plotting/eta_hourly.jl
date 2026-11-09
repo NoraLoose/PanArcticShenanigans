@@ -51,13 +51,13 @@ println("\nη(t) − η(0), domain-mean change removed; window i = $irange, j = 
 @printf("%6s %12s %12s   %s\n", "hour", "rms (cm)", "max |.| (cm)", "where the largest is (i, j, °E, °N)")
 for h in sort(unique(vcat(0:min(48, round(Int, (η.times[end] - start_time) / hours)), hours_to_plot)))
     n = record_at(h)
-    w = change(n)[irange, jrange]
-    finite = filter(isfinite, w)
+    δ = change(n)[irange, jrange]
+    finite = filter(isfinite, δ)
     isempty(finite) && continue
-    k = argmax(ifelse.(isfinite.(w), abs.(w), -Inf))
+    k = argmax(ifelse.(isfinite.(δ), abs.(δ), -Inf))
     i, j = irange[k[1]], jrange[k[2]]
     @printf("%6.1f %12.2f %12.2f   (%d, %d, %.1f°E, %.1f°N)\n", (η.times[n] - start_time) / hours,
-            100 * sqrt(mean(abs2, finite)), 100 * abs(w[k]), i, j,
+            100 * sqrt(mean(abs2, finite)), 100 * abs(δ[k]), i, j,
             λnode(i, j, 1, mgrid, Center(), Center(), Center()), φnode(i, j, 1, mgrid, Center(), Center(), Center()))
 end
 
@@ -87,6 +87,31 @@ extrema_at = [m for m in 2:length(seesaw)-1 if (seesaw[m] - seesaw[m-1]) * (sees
 println("Zero crossings of nordic − subpolar (h): ", join((@sprintf("%.1f", c) for c in crossings), ", "))
 length(crossings) ≥ 2 && @printf("Period from the crossings: %.1f h (twice the mean spacing)\n", 2 * mean(diff(crossings)))
 println("Extrema of nordic − subpolar: ", join((@sprintf("%.1f h: %+.1f cm", hours_all[m], seesaw[m]) for m in extrema_at), "; "))
+
+# The same change WITHOUT removing the domain mean, split by depth over the whole domain: the domain mean itself (the
+# net volume change through the edges and the surface), and the means over the shelves (H < 200 m), the slopes
+# (200–1000 m) and the deep ocean (H > 1000 m). The region means above are relative to the domain mean, so a fall on
+# the large shelves shows there as a rise everywhere deep; this table separates the two.
+column_depth = try
+    [static_column_depthᶜᶜᵃ(i, j, mgrid) for i in 1:Nx, j in 1:Ny]
+catch
+    nothing
+end
+if isnothing(column_depth)
+    @warn "the saved grid has no bathymetry: skipping the means by depth"
+else
+    classes = (shelf = wet .& (column_depth .< 200), slope = wet .& (200 .≤ column_depth .< 1000), deep = wet .& (column_depth .≥ 1000))
+    full_change(n) = ifelse.(wet, Array(interior(η[n]))[:, :, 1] .- η₀, NaN)
+    class_mean(a, mask) = any(mask) ? mean(a[mask]) : NaN
+    println("\nη(t) − η(0) WITHOUT removing the domain mean (cm); share of the wet cells: ",
+            join((@sprintf("%s %.0f%%", name, 100 * count(m) / count(wet)) for (name, m) in pairs(classes)), ", "))
+    @printf("%6s %12s %10s %10s %10s\n", "hour", "domain mean", "shelf", "slope", "deep")
+    for (m, h) in enumerate(hours_all)
+        a = full_change(records[m])
+        @printf("%6.1f %12.2f %10.2f %10.2f %10.2f\n", h, 100 * mean(a[wet]),
+                100 * class_mean(a, classes.shelf), 100 * class_mean(a, classes.slope), 100 * class_mean(a, classes.deep))
+    end
+end
 
 fig_ts = Figure(size = (1000, 450), fontsize = 14)
 ax_ts = Axis(fig_ts[1, 1], xlabel = "hour", ylabel = "cm", title = "region means of η(t) − η(0), domain mean removed")
