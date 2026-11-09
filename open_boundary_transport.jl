@@ -24,8 +24,6 @@
 using Oceananigans.Grids: static_column_depthᶜᶠᵃ, static_column_depthᶜᶜᵃ
 using Oceananigans.Operators: Δxᶜᶠᶜ, Azᶜᶜᶜ
 
-const g_obc = Oceananigans.defaults.gravitational_acceleration
-
 # ## 1. Edge geometry and GLORYS's net transport per edge
 
 edge_rows = (1, Ny + 1)
@@ -70,18 +68,6 @@ all(ηᵉˣᵗ.times .≈ vᶠ.times) || error("GLORYS η and v must share their
 glorys_mean_η = [sum(Array(interior(ηᵉˣᵗ[n]))[:, :, 1] .* wet_area) / domain_area for n in eachindex(ηᵉˣᵗ.times)]
 glorys_volume_rate = domain_area .* diff(glorys_mean_η) ./ Δt_obc    # between snapshots n and n + 1
 
-# Linear interpolation of a snapshot series to time t (clamped to the first and last snapshots)
-@inline function in_time(series, t, t₀, Δt)
-    N = length(series)
-    s = clamp((t - t₀) / Δt, zero(t), convert(typeof(t), N - 1))
-    n = min(floor(Int, s) + 1, N - 1)
-    α = s - (n - 1)
-    return @inbounds (1 - α) * series[n] + α * series[n + 1]
-end
-
-# The value of a series defined between snapshots (length N - 1) at time t
-@inline between_snapshots(series, t, t₀, Δt) = @inbounds series[clamp(floor(Int, (t - t₀) / Δt) + 1, 1, length(series))]
-
 # ## 2. Constrained conditions on the barotropic transport
 #
 # Three methods share one boundary function, all with Flather underneath (V = Vᵉˣᵗ ∓ c(ηᵇ − ηᵉˣᵗ), c = √(gH)):
@@ -91,66 +77,6 @@ end
 #               velocities with `useOBCSbalance`)
 # w is one uniform velocity on every open face (∝ H), removed from the inflow, that brings the total net inflow to the
 # target set by `total_net_inflow_Sv`.
-
-# Sums along one edge: Σ c (ηᵇ − ηᵉˣᵗ) Δx and Σ c Δx. jᶠ: the boundary face row; jᵢ, jₕ: the interior and halo rows of
-# η either side of it; jₑ: the row of ηᵉˣᵗ used by atlantic_V_obc / pacific_V_obc.
-@inline function edge_mismatch(jᶠ, jᵢ, jₕ, jₑ, grid, clock, fields, ηᵉˣᵗ)
-    t  = Oceananigans.Units.Time(clock.time)
-    η  = fields.η
-    kη = grid.Nz + 1
-    num = zero(grid)
-    den = zero(grid)
-    for i′ in 1:grid.Nx
-        H  = static_column_depthᶜᶠᵃ(i′, jᶠ, grid)
-        c  = sqrt(g_obc * max(H, zero(H)))
-        Δx = Δxᶜᶠᶜ(i′, jᶠ, 1, grid)
-        ηᵇ = @inbounds (η[i′, jᵢ, kη] + η[i′, jₕ, kη]) / 2
-        num += ifelse(H > 0, c * (ηᵇ - @inbounds(ηᵉˣᵗ[i′, jₑ, 1, t])) * Δx, zero(grid))
-        den += c * Δx
-    end
-    return num, den
-end
-
-# Per-edge corrections and the total. Per edge: hybrid shifts ηᵉˣᵗ by C (√(gH)-weighted); clamped subtracts a uniform
-# velocity u (∝ H), used only to move from the interpolated to the native target. Then w (∝ H) on both edges sets the
-# total. Returns (C_atlantic, C_pacific, u_atlantic, u_pacific, w).
-@inline function constraints(grid, clock, fields, p)
-    t = clock.time
-    nA, dA = edge_mismatch(1, 1, 0, 1, grid, clock, fields, p.η)
-    nP, dP = edge_mismatch(grid.Ny + 1, grid.Ny, grid.Ny + 1, grid.Ny, grid, clock, fields, p.η)
-    VA = in_time(p.atlantic, t, p.t₀, p.Δt)                     # Σ Vᵉˣᵗ Δx on the model grid: into the domain
-    VP = in_time(p.pacific,  t, p.t₀, p.Δt)                     # out of the domain
-    TA = in_time(p.atlantic_target, t, p.t₀, p.Δt)              # the per-edge targets
-    TP = in_time(p.pacific_target,  t, p.t₀, p.Δt)
-    CA = ifelse(p.edge_shift & (dA > 0), (nA - (VA - TA)) / dA, zero(grid))
-    CP = ifelse(p.edge_shift & (dP > 0), (nP + (VP - TP)) / dP, zero(grid))
-    uA = ifelse(p.clamped, (VA - TA) / p.atlantic_area, zero(grid))
-    uP = ifelse(p.clamped, (VP - TP) / p.pacific_area,  zero(grid))
-    flather = !p.clamped
-    inflow = (VA - ifelse(flather, nA, zero(grid)) + CA * dA - uA * p.atlantic_area) -
-             (VP + ifelse(flather, nP, zero(grid)) - CP * dP - uP * p.pacific_area)
-    nudge  = p.domain_area * p.nudging_rate * (in_time(p.glorys_Δη, t, p.t₀, p.Δt) - @inbounds(p.model_Δη[1]))
-    target = ifelse(p.follow_volume, between_snapshots(p.rate, t, p.t₀, p.Δt) - @inbounds(p.freshwater[1]),
-             ifelse(p.follow_transport, TA - TP + nudge, p.target))
-    w = ifelse(p.use_total, (inflow - target) / p.area, zero(grid))
-    return CA, CP, uA, uP, w
-end
-
-@inline function atlantic_V_constrained(i, k, grid, clock, fields, p)
-    V, ηᵉ = atlantic_V_obc(i, k, grid, clock, fields, p)
-    CA, CP, uA, uP, w = constraints(grid, clock, fields, p)
-    H  = max(static_column_depthᶜᶠᵃ(i, 1, grid), zero(grid))
-    ηᵇ = @inbounds (fields.η[i, 0, grid.Nz + 1] + fields.η[i, 1, grid.Nz + 1]) / 2
-    return (V - H * (uA + w), ifelse(p.clamped, ηᵇ, ηᵉ + CA))
-end
-
-@inline function pacific_V_constrained(i, k, grid, clock, fields, p)
-    V, ηᵉ = pacific_V_obc(i, k, grid, clock, fields, p)
-    CA, CP, uA, uP, w = constraints(grid, clock, fields, p)
-    H  = max(static_column_depthᶜᶠᵃ(i, grid.Ny + 1, grid), zero(grid))
-    ηᵇ = @inbounds (fields.η[i, grid.Ny, grid.Nz + 1] + fields.η[i, grid.Ny + 1, grid.Nz + 1]) / 2
-    return (V - H * (uP - w), ifelse(p.clamped, ηᵇ, ηᵉ + CP))
-end
 
 barotropic_scheme = get(bc, "barotropic", "flather")
 total_setting    = get(bc, "total_net_inflow_Sv", "glorys_transport")

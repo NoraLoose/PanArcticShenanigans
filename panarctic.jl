@@ -13,6 +13,17 @@ using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inacti
 using Printf
 using ClimaSeaIce: IncrementalRemapping
 
+# Functions used inside GPU kernels: loaded once per Julia session (again only if kernels.jl changed), so that a second
+# run in the same REPL reuses the compiled time step instead of compiling it again
+kernels_hash = hash(read(joinpath(@__DIR__, "kernels.jl")))
+if !@isdefined(loaded_kernels_hash) || loaded_kernels_hash != kernels_hash
+    include("kernels.jl")
+    loaded_kernels_hash = kernels_hash
+    @info "Loaded kernels.jl: the time step compiles at the first step"
+else
+    @info "kernels.jl already loaded in this session: reusing the compiled kernels"
+end
+
 # ## GLORYS boundary data
 
 # T and S need full inpainting: capped inpainting leaves gaps in deep basins (Baffin Bay overturning, #2).
@@ -22,10 +33,7 @@ uᵉˣᵗ = FieldTimeSeries(Metadata(:u_velocity;   dates, dataset, region, dir_
 vᵉˣᵗ = FieldTimeSeries(Metadata(:v_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 ηᵉˣᵗ = glorys_free_surface()
 
-# Rotate GLORYS velocities from east/north into the grid frame.
-
-@inline grid_frame_u(i, j, k, grid, uₑ, vₑ) = intrinsic_vector(i, j, k, grid, uₑ, vₑ)[1]
-@inline grid_frame_v(i, j, k, grid, uₑ, vₑ) = intrinsic_vector(i, j, k, grid, uₑ, vₑ)[2]
+# Rotate GLORYS velocities from east/north into the grid frame (grid_frame_u, grid_frame_v in kernels.jl).
 
 for n in eachindex(uᵉˣᵗ.times)
     uₙ, vₙ = uᵉˣᵗ[n], vᵉˣᵗ[n]
@@ -58,10 +66,6 @@ velocity_scheme()  = ObliqueRadiation(inflow_timescale = bc["velocity_inflow_day
 atlantic_tracer_scheme() = TracerReservoir(inflow_length_scale = bc["tracer_inflow_km_atlantic"] * kilometers)
 pacific_tracer_scheme()  = TracerReservoir(inflow_length_scale = bc["tracer_inflow_km_pacific"]  * kilometers)
 
-@inline atlantic_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, 1,          k, Oceananigans.Units.Time(clock.time)]
-@inline  pacific_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny,    k, Oceananigans.Units.Time(clock.time)]
-@inline pacific_face_obc(i, k, grid, clock, fields, φ) = @inbounds φ[i, grid.Ny+1, k, Oceananigans.Units.Time(clock.time)]
-
 u_obcs = FieldBoundaryConditions(
     south = ValueBoundaryCondition(atlantic_obc, discrete_form = true, parameters = uᶠ, scheme = velocity_scheme()),
     north = ValueBoundaryCondition(pacific_obc,  discrete_form = true, parameters = uᶠ, scheme = velocity_scheme()))
@@ -77,31 +81,6 @@ T_obcs = FieldBoundaryConditions(
 S_obcs = FieldBoundaryConditions(
     south = ValueBoundaryCondition(atlantic_obc, discrete_form = true, parameters = Sᵉˣᵗ, scheme = atlantic_tracer_scheme()),
     north = ValueBoundaryCondition(pacific_obc,  discrete_form = true, parameters = Sᵉˣᵗ, scheme = pacific_tracer_scheme()))
-
-@inline wetcell(i, j, k, grid, ℓx, ℓy, ℓz) =
-    !immersed_peripheral_node(i, j, k, grid, ℓx, ℓy, ℓz) & !immersed_inactive_node(i, j, k, grid, ℓx, ℓy, ℓz)
-
-@inline function vertical_integral(i, j, grid, u, t, Δz, ℓx, ℓy, ℓz)
-    U = zero(eltype(grid))
-    @inbounds for k in 1:grid.Nz
-        wet = wetcell(i, j, k, grid, ℓx, ℓy, ℓz)
-        U += ifelse(wet, u[i, j, k, t] * Δz(i, j, k, grid), zero(U))
-    end
-    return U
-end
-
-@inline function atlantic_V_obc(i, k, grid, clock, fields, p)
-    t = Oceananigans.Units.Time(clock.time)
-    V = vertical_integral(i, 1, grid, p.v, t, Δzᶜᶠᶜ, Center(), Face(), Center())
-    return (V, @inbounds p.η[i, 1, 1, t])
-end
-
-@inline function pacific_V_obc(i, k, grid, clock, fields, p)
-    j = grid.Ny+1
-    t = Oceananigans.Units.Time(clock.time)
-    V = vertical_integral(i, j, grid, p.v, t, Δzᶜᶠᶜ, Center(), Face(), Center())
-    return (V, @inbounds p.η[i, grid.Ny, 1, t])
-end
 
 V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
     south = GravityWaveRadiationBoundaryCondition(atlantic_V_obc, discrete_form = true, parameters = (v = vᶠ, η = ηᵉˣᵗ)),
