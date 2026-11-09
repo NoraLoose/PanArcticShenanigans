@@ -217,6 +217,18 @@ else
 end
 
 atmosphere    = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...)
+
+# Test of the initial adjustment: with `winds = false` in [atmosphere], the JRA55 winds are set to zero (heat and
+# freshwater fluxes still use the other JRA55 fields, with no wind in the bulk formulae). The whole record is held in
+# memory so that nothing is reloaded from file.
+if !get(config["atmosphere"], "winds", true)
+    atmosphere = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...,
+                                           time_indices_in_memory = length(atmosphere.velocities.u.times))
+    for u in atmosphere.velocities
+        fill!(parent(u.data), 0)
+    end
+    @warn "JRA55 winds set to zero ([atmosphere] winds = false)"
+end
 radiation     = JRA55PrescribedRadiation(arch; jra55..., dir_kw...)
 land          = JRA55PrescribedLand(grid; jra55..., dir_kw...)
 
