@@ -32,15 +32,15 @@ for (name, d) in data
     eη = Δfrom_start(d["eta_mean_m"])[end] - Δfrom_start(d["glorys_eta_mean_m"])[end]
     r  = d["budget_residual_Sv"][2:end]
     @printf("%-12s %14.3f %14.3f %14.3f %16.2f %16.3f\n", name, eA, eP, sN, eη, rms(filter(isfinite, r)))
-    push!(scores, (; name, eA, eη))
+    push!(scores, (; name, eA, eP, sN, eη))
 end
 
 fig = Figure(size = (1400, 900), fontsize = 15)
 axA = Axis(fig[1, 1], title = "(a) Atlantic edge: net transport into the domain", xlabel = "hour", ylabel = "Sv")
 axP = Axis(fig[1, 2], title = "(b) Pacific edge: net transport out of the domain", xlabel = "hour", ylabel = "Sv")
 axη = Axis(fig[2, 1], title = "(c) change in the domain-mean free surface", xlabel = "hour", ylabel = "cm")
-axs = Axis(fig[2, 2], title = "(d) transport error against volume error", xlabel = "Atlantic rms transport error (Sv)",
-           ylabel = "|Δ⟨η⟩ − GLORYS| at the end (cm)")
+axs = Axis(fig[2, 2], title = "(d) errors against GLORYS", ylabel = "Sv",
+           xticks = (1:3, ["Atlantic rms error", "Pacific rms error", "net-transport std"]))
 for (name, d) in data
     h = d["hour"]
     lines!(axA, h, d["atlantic_model_Sv"], color = colour(name), label = name)
@@ -51,9 +51,8 @@ h, d = data[1][2]["hour"], data[1][2]
 lines!(axA, h, d["atlantic_glorys_Sv"], color = :gray, linestyle = :dash, label = "GLORYS")
 lines!(axP, h, d["pacific_glorys_Sv"],  color = :gray, linestyle = :dash)
 lines!(axη, h, Δfrom_start(d["glorys_eta_mean_m"]), color = :gray, linestyle = :dash)
-for s in scores
-    scatter!(axs, [s.eA], [abs(s.eη)], color = colour(s.name), markersize = 16)
-    text!(axs, s.eA, abs(s.eη); text = "  " * s.name, align = (:left, :center))
+for (k, s) in enumerate(scores)
+    barplot!(axs, 1:3, [s.eA, s.eP, s.sN]; dodge = fill(k, 3), n_dodge = length(scores), color = colour(s.name))
 end
 Legend(fig[3, 1:2], axA, orientation = :horizontal, framevisible = false)
 save("obc_comparison.png", fig)
