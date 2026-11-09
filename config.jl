@@ -12,7 +12,8 @@ config = TOML.parsefile(config_file)
 
 data_dir   = config["paths"]["data_dir"]
 dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
-output_dir = mkpath(config["paths"]["output_dir"])
+output_dir = mkpath(config["paths"]["output_dir"])   # model output
+figure_dir = mkpath(config["paths"]["figure_dir"])   # figures and movies
 
 # Output files, written by panarctic.jl and read by plotting/surface_movie.jl
 ocean_output_file   = joinpath(output_dir, "arctic_ocean_daily.jld2")

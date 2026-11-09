@@ -20,7 +20,7 @@ julia +1.13 --project=. -e 'using Pkg; Pkg.instantiate()'   # once
 julia +1.13 --project=. panarctic.jl
 ```
 
-Settings (grid, dates, time step, run length, data and output folders) are in [`config.toml`](config.toml). To use your own, copy it and pass it as an argument:
+Settings (grid, dates, time step, output, and the data, output and figure folders) are in [`config.toml`](config.toml). To use your own, copy it and pass it as an argument:
 
 ```bash
 cp config.toml config_myname.toml   # edit as needed
@@ -31,13 +31,13 @@ The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk 
 
 The first run is slow: it downloads the data and fills gaps in GLORYS (cached afterwards). Later runs start in a few minutes.
 
-Output is written to `output_dir`: daily means of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean_daily.jld2`, `arctic_sea_ice_daily.jld2`), and checkpoints of the full model state (`arctic_checkpoint*.jld2`). The averaging and checkpoint intervals are set in `[output]` in the config.
+Model output is written to `output_dir` (default `output/`, relative to where you run): daily means of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean_daily.jld2`, `arctic_sea_ice_daily.jld2`), and checkpoints of the full model state (`arctic_checkpoint*.jld2`). The averaging and checkpoint intervals are set in `[output]` in the config.
 
 To continue a run from its latest checkpoint, set `restart = true` and run again with the same config. The run still ends at `end_date`.
 
 ## Figures and movies
 
-Plotting is separate from the model run. There is one script per figure or movie; each takes the same config file as `panarctic.jl` and writes to `output_dir`:
+Plotting is separate from the model run. There is one script per figure or movie; each takes the same config file as `panarctic.jl` and writes to `figure_dir` (default `figures/`), separate from the model output:
 
 ```bash
 julia +1.13 --project=. plotting/bathymetry.jl          [config.toml]   # bathymetry.png

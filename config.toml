@@ -28,7 +28,8 @@ restart         = false   # true: continue from the latest checkpoint in output_
 
 [paths]
 data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
-output_dir = "."  # where output (.jld2) and figures/movies from the plotting/ scripts are written
+output_dir = "output"    # model output: daily means (.jld2) and checkpoints
+figure_dir = "figures"   # figures and movies from the plotting/ scripts
 
 [boundaries]
 velocity_inflow_days      = 1    # oblique radiation on u, v: nudging timescale toward GLORYS on inflow

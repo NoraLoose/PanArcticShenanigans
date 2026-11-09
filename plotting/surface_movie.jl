@@ -3,7 +3,7 @@
 #   julia +1.13 --project=. plotting/surface_movie.jl [config.toml]
 #
 # Reads arctic_ocean_daily.jld2 and arctic_sea_ice_daily.jld2 from `output_dir` and writes arctic_sea.mp4
-# there. Runs on the CPU and does not need the grid or input data. The 3D fields are read one day at a time.
+# to `figure_dir`. Runs on the CPU and does not need the grid or input data. The 3D fields are read one day at a time.
 
 include("../config.jl")
 
@@ -48,6 +48,6 @@ Colorbar(fig[1, 4], hm_S, label = "SSS [psu]")
 Colorbar(fig[2, 2], hm_U, label = "Surface speed [ms⁻¹]")
 Colorbar(fig[2, 4], hm_h, label = "ice volume per area [m]")
 
-CairoMakie.record(fig, joinpath(output_dir, "arctic_sea.mp4"), 1:length(times), framerate = 4) do i
+CairoMakie.record(fig, joinpath(figure_dir, "arctic_sea.mp4"), 1:length(times), framerate = 4) do i
     n[] = i
 end

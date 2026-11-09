@@ -1,4 +1,4 @@
-# Bathymetry of the model grid. Writes bathymetry.png to `output_dir`.
+# Bathymetry of the model grid. Writes bathymetry.png to `figure_dir`.
 #
 #   julia +1.13 --project=. plotting/bathymetry.jl [config.toml]
 #
@@ -17,4 +17,4 @@ ax = Axis(fig[1, 1], xlabel = "grid i", ylabel = "grid j",
 hm = heatmap!(ax, h_bottom, colormap = :deep, colorrange = (-depth, 0), nan_color = :gray80)
 Colorbar(fig[1, 2], hm, label = "bottom height [m]")
 
-save(joinpath(output_dir, "bathymetry.png"), fig)
+save(joinpath(figure_dir, "bathymetry.png"), fig)
