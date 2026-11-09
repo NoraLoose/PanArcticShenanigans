@@ -103,8 +103,8 @@ gateways = map(gateway_sections) do (name, points, positive)
     faces = path_faces(path)
     area  = face_geometry(faces)
     wet   = vec(sum(area, dims = 2)) .> 0
-    @info @sprintf("Section %-8s %3d faces (%d wet), corners (%d, %d) to (%d, %d), %.2f°E %.2f°N to %.2f°E %.2f°N, " *
-                   "wet area %.2f km², positive %s", name, length(faces), count(wet), path[1]..., path[end]...,
+    @info @sprintf("Section %-14s %3d faces (%d wet), corners (%d, %d) to (%d, %d), %.2f°E %.2f°N to %.2f°E %.2f°N, wet area %.2f km², positive %s",
+                   name, length(faces), count(wet), path[1]..., path[end]...,
                    corner_λ[path[1]...], corner_φ[path[1]...], corner_λ[path[end]...], corner_φ[path[end]...],
                    sum(area) / 1e6, positive)
     # Both ends should be on land; a wet end face means water can pass round the end of the section
