@@ -258,6 +258,7 @@ function ice_progress(sim)
 end
 add_callback!(simulation, ice_progress, TimeInterval(1hours))
 add_callback!(simulation, transport_monitor, TimeInterval(1hours))
+add_callback!(simulation, update_surface_freshwater!, IterationInterval(1))
 
 # ## Output: hourly fields near the surface
 

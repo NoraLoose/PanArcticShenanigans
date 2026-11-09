@@ -4,13 +4,19 @@
 # 1. GLORYS's net transport through each edge, from the boundary data, at each daily snapshot.
 # 2. With `barotropic = "hybrid"` in [boundaries]: the hybrid condition replaces plain Flather on the barotropic
 #    transport. On each edge, Flather about ηᵉˣᵗ + C, with C chosen every barotropic substep so that the edge's net
-#    transport equals GLORYS's (a uniform η shift; the transport changes in proportion to √(gH)). Then, if
-#    `total_net_inflow_Sv` is a number, one uniform velocity w on both edges brings the total net inflow to it; with
-#    "glorys" the total is GLORYS's own (w = 0). A datum difference between GLORYS's and the model's free surface then
-#    moves no water, and the throughflow follows GLORYS's. Tested in panarctic-tools/sandbox/obc-vortex.
+#    transport equals GLORYS's (a uniform η shift; the transport changes in proportion to √(gH)). Then one uniform
+#    velocity w on both edges sets the total net inflow, chosen by `total_net_inflow_Sv`:
+#      "glorys_volume"  the model's volume changes at the rate GLORYS's does over the same wet domain:
+#                       total = A d⟨ηᴳ⟩/dt − (model's surface freshwater flux). Only the rate of change of GLORYS's mean
+#                       free surface enters, so a datum offset drops out; the model's own surface fluxes (ice growth
+#                       and melt, rivers, P − E) are accounted for every time step.
+#      a number (Sv)    a fixed total
+#      "glorys"         GLORYS's own total (w = 0). It need not close on the model grid.
+#    A datum difference between GLORYS's and the model's free surface then moves no water, and the throughflow
+#    follows GLORYS's. Tested in panarctic-tools/sandbox/obc-vortex.
 # 3. An hourly monitor, transport_monitor.csv in the output directory: model and GLORYS net transport per edge, the
-#    domain-integrated surface freshwater volume flux and the domain-mean free surface (to close the volume budget
-#    before tying the total to the surface fluxes).
+#    hybrid's total, the surface freshwater volume flux (positive into the ocean), the area-weighted mean free surface
+#    and the residual of the volume budget.
 
 using Oceananigans.Grids: static_column_depthᶜᶠᵃ, static_column_depthᶜᶜᵃ
 using Oceananigans.Operators: Δxᶜᶠᶜ, Azᶜᶜᶜ
@@ -45,6 +51,16 @@ all(diff(vᶠ.times) .≈ Δt_obc) || error("the boundary data must be evenly sp
 @info @sprintf("GLORYS at the start: Atlantic %.2f Sv in, Pacific %.2f Sv out, net %.3f Sv",
                atlantic_glorys[start_index] / 1e6, pacific_glorys[start_index] / 1e6, glorys_net[start_index] / 1e6)
 
+# Wet columns, their areas, and the rate of change of GLORYS's volume over the same wet domain
+wet_column, cell_area = CUDA.@allowscalar begin
+    ([static_column_depthᶜᶜᵃ(i, j, grid) > 0 for i in 1:Nx, j in 1:Ny], [Azᶜᶜᶜ(i, j, 1, grid) for i in 1:Nx, j in 1:Ny])
+end
+wet_area    = cell_area .* wet_column
+domain_area = sum(wet_area)
+all(ηᵉˣᵗ.times .≈ vᶠ.times) || error("GLORYS η and v must share their snapshot times")
+glorys_mean_η = [sum(Array(interior(ηᵉˣᵗ[n]))[:, :, 1] .* wet_area) / domain_area for n in eachindex(ηᵉˣᵗ.times)]
+glorys_volume_rate = domain_area .* diff(glorys_mean_η) ./ Δt_obc    # between snapshots n and n + 1
+
 # Linear interpolation of a snapshot series to time t (clamped to the first and last snapshots)
 @inline function in_time(series, t, t₀, Δt)
     N = length(series)
@@ -53,6 +69,9 @@ all(diff(vᶠ.times) .≈ Δt_obc) || error("the boundary data must be evenly sp
     α = s - (n - 1)
     return @inbounds (1 - α) * series[n] + α * series[n + 1]
 end
+
+# The value of a series defined between snapshots (length N - 1) at time t
+@inline between_snapshots(series, t, t₀, Δt) = @inbounds series[clamp(floor(Int, (t - t₀) / Δt) + 1, 1, length(series))]
 
 # ## 2. The hybrid condition
 
@@ -75,7 +94,10 @@ end
     return ifelse(den > 0, num / den, zero(grid))
 end
 
-@inline hybrid_velocity(t, p) = (in_time(p.net, t, p.t₀, p.Δt) - p.target) / p.area
+@inline function hybrid_velocity(t, p)
+    target = ifelse(p.follow_volume, between_snapshots(p.rate, t, p.t₀, p.Δt) - @inbounds(p.freshwater[1]), p.target)
+    return ifelse(p.use_total, (in_time(p.net, t, p.t₀, p.Δt) - target) / p.area, zero(t))
+end
 
 @inline function atlantic_V_hybrid(i, k, grid, clock, fields, p)
     V, ηᵉ = atlantic_V_obc(i, k, grid, clock, fields, p)
@@ -92,20 +114,33 @@ end
 end
 
 barotropic_scheme = get(bc, "barotropic", "flather")
-total_setting = get(bc, "total_net_inflow_Sv", "glorys")
-total_from_glorys = total_setting == "glorys"
-target_inflow = total_from_glorys ? 0.0 : total_setting * 1e6
+total_setting = get(bc, "total_net_inflow_Sv", "glorys_volume")
+follow_volume = total_setting == "glorys_volume"
+use_total     = total_setting != "glorys"
+target_inflow = total_setting isa Number ? total_setting * 1e6 : 0.0
 open_area = sum(H_edge .* Δx_edge)
-corrected_net = total_from_glorys ? zero(glorys_net) : glorys_net     # w = 0 when the total is GLORYS's
+
+# The model's surface freshwater volume flux over the wet domain (positive into the ocean), updated every time step
+surface_freshwater = on_architecture(arch, [0.0])
+wet_area_device = on_architecture(arch, wet_area)
+surface_freshwater_flux(ocean_model) = NumericalEarth.Oceans.extract_freshwater_flux(ocean_model.tracers.S.boundary_conditions.top.condition)
+
+function update_surface_freshwater!(sim)
+    Jʷ = surface_freshwater_flux(sim.model.ocean.model)
+    fill!(surface_freshwater, sum(interior(Jʷ) .* wet_area_device))
+    return nothing
+end
 
 if barotropic_scheme == "hybrid"
-    p_hybrid = (v = vᶠ, η = ηᵉˣᵗ, net = on_architecture(arch, corrected_net), t₀ = t₀_obc, Δt = Δt_obc,
-                area = open_area, target = target_inflow)
+    p_hybrid = (v = vᶠ, η = ηᵉˣᵗ, net = on_architecture(arch, glorys_net), rate = on_architecture(arch, glorys_volume_rate),
+                freshwater = surface_freshwater, t₀ = t₀_obc, Δt = Δt_obc, area = open_area, target = target_inflow,
+                follow_volume, use_total)
     V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
         south = GravityWaveRadiationBoundaryCondition(atlantic_V_hybrid, discrete_form = true, parameters = p_hybrid),
         north = GravityWaveRadiationBoundaryCondition(pacific_V_hybrid,  discrete_form = true, parameters = p_hybrid))
     @info "Barotropic transport: hybrid (each edge's net to GLORYS's; total: " *
-          (total_from_glorys ? "GLORYS's)" : @sprintf("%.3f Sv)", target_inflow / 1e6))
+          (follow_volume ? "the model's volume follows GLORYS's)" :
+           use_total ? @sprintf("%.3f Sv)", target_inflow / 1e6) : "GLORYS's own)")
 elseif barotropic_scheme == "flather"
     @info "Barotropic transport: Flather"
 else
@@ -115,13 +150,11 @@ end
 # ## 3. Hourly transport monitor
 
 monitor_file = joinpath(output_dir, "transport_monitor.csv")
-wet_column, cell_area = CUDA.@allowscalar begin
-    ([static_column_depthᶜᶜᵃ(i, j, grid) > 0 for i in 1:Nx, j in 1:Ny], [Azᶜᶜᶜ(i, j, 1, grid) for i in 1:Nx, j in 1:Ny])
-end
 open(monitor_file, "w") do io
     println(io, "hour,atlantic_model_Sv,atlantic_glorys_Sv,pacific_model_Sv,pacific_glorys_Sv,net_model_Sv,",
-                "net_glorys_Sv,hybrid_w_mm_per_s,surface_freshwater_Sv,eta_mean_m")
+                "net_glorys_Sv,hybrid_total_Sv,glorys_volume_rate_Sv,surface_freshwater_Sv,eta_mean_m,budget_residual_Sv")
 end
+previous_monitor = Ref((t = NaN, η = NaN))
 
 function transport_monitor(sim)
     model = sim.model.ocean.model
@@ -130,15 +163,19 @@ function transport_monitor(sim)
     η = Array(interior(model.free_surface.displacement))[:, :, 1]
     atlantic = sum(V[:, 1] .* Δx_edge[:, 1])
     pacific  = sum(V[:, Ny + 1] .* Δx_edge[:, 2])
-    Jʷ = Array(interior(NumericalEarth.Oceans.extract_freshwater_flux(model.tracers.S.boundary_conditions.top.condition)))
-    freshwater = sum(Jʷ[:, :, 1][wet_column] .* cell_area[wet_column])   # sign as NumericalEarth's carrying flux
-    w = barotropic_scheme == "hybrid" ? (in_time(corrected_net, t, t₀_obc, Δt_obc) - target_inflow) / open_area : 0.0
+    freshwater = sum(Array(interior(surface_freshwater_flux(model)))[:, :, 1] .* wet_area)
+    mean_η = sum(η .* wet_area) / domain_area
+    rate = between_snapshots(glorys_volume_rate, t, t₀_obc, Δt_obc)
+    total = follow_volume ? rate - freshwater : use_total ? target_inflow : in_time(glorys_net, t, t₀_obc, Δt_obc)
+    # A d⟨η⟩/dt over the last hour minus what the boundaries and the surface supplied now (zero if the budget closes)
+    residual = domain_area * (mean_η - previous_monitor[].η) / (t - previous_monitor[].t) - (atlantic - pacific + freshwater)
+    previous_monitor[] = (; t, η = mean_η)
     open(monitor_file, "a") do io
-        @printf(io, "%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.5f\n", (t - start_time) / 3600,
+        @printf(io, "%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.5f,%.4f\n", (t - start_time) / 3600,
                 atlantic / 1e6, in_time(atlantic_glorys, t, t₀_obc, Δt_obc) / 1e6,
                 pacific / 1e6, in_time(pacific_glorys, t, t₀_obc, Δt_obc) / 1e6,
                 (atlantic - pacific) / 1e6, in_time(glorys_net, t, t₀_obc, Δt_obc) / 1e6,
-                1e3 * w, freshwater / 1e6, sum(η[wet_column]) / count(wet_column))
+                total / 1e6, rate / 1e6, freshwater / 1e6, mean_η, residual / 1e6)
     end
     return nothing
 end
