@@ -224,7 +224,6 @@ coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation, 
 
 # ## Simulation
 
-stop_time = start_time + config["time"]["stop_hours"] * hours
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 wall_time = Ref(time_ns())

@@ -27,7 +27,7 @@ cp config.toml config_myname.toml   # edit as needed
 julia +1.13 --project=. panarctic.jl config_myname.toml
 ```
 
-The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk with space. For a quick check, set `stop_hours = 3`.
+The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk with space. For a quick check, set `end_date = 1993-01-01T15:00` (3 hours).
 
 The first run is slow: it downloads the data and fills gaps in GLORYS (cached afterwards). Later runs start in a few minutes.
 
