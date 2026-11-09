@@ -17,3 +17,4 @@ output_dir = mkpath(config["paths"]["output_dir"])
 # Output files, written by panarctic.jl and read by plotting/surface_movie.jl
 ocean_output_file   = joinpath(output_dir, "arctic_ocean_daily.jld2")
 sea_ice_output_file = joinpath(output_dir, "arctic_sea_ice_daily.jld2")
+checkpoint_prefix   = "arctic_checkpoint"   # checkpoints in output_dir, written by panarctic.jl

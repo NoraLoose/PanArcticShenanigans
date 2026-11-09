@@ -253,12 +253,13 @@ function ice_progress(sim)
 end
 add_callback!(simulation, ice_progress, TimeInterval(1hours))
 
-# ## Output: daily means
+# ## Output: daily means and checkpoints
 #
 # Averages over `average_hours` (daily by default) of the 3D ocean state, the free surface and the sea ice,
-# in single precision.
+# in single precision. Checkpoints of the full model state every `checkpoint_days`, for restarts.
 
-output = config["output"]
+output  = config["output"]
+restart = output["restart"]
 
 (; u, v) = ocean.model.velocities
 η = ocean.model.free_surface.displacement
@@ -267,14 +268,25 @@ sea_ice_outputs = (; h = sea_ice.model.ice_thickness, ℵ = sea_ice.model.ice_co
                      uᵢ = sea_ice.model.velocities.u, vᵢ = sea_ice.model.velocities.v)
 
 # Attached to the coupled simulation, whose run loop accumulates the averages every time step.
+# On a restart, append to the existing files instead of overwriting them.
 simulation.output_writers[:ocean] = JLD2Writer(ocean.model, ocean_outputs;
                                                filename = ocean_output_file,
                                                schedule = AveragedTimeInterval(output["average_hours"] * hours),
-                                               overwrite_files = true)
+                                               overwrite_files = !restart)
 
 simulation.output_writers[:sea_ice] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                                  filename = sea_ice_output_file,
                                                  schedule = AveragedTimeInterval(output["average_hours"] * hours),
-                                                 overwrite_files = true)
+                                                 overwrite_files = !restart)
+
+simulation.output_writers[:checkpointer] = Checkpointer(coupled_model;
+                                                        schedule = TimeInterval(output["checkpoint_days"] * days),
+                                                        dir = output_dir,
+                                                        prefix = checkpoint_prefix)
+
+# Continue from the latest checkpoint: it replaces the initial conditions and sets all clocks.
+# @allowscalar: Oceananigans restores the open-boundary radiation buffers with an element-wise copy into
+# GPU arrays (small boundary rows, so this is cheap).
+restart && CUDA.@allowscalar set!(simulation; checkpoint = :latest)
 
 run!(simulation)

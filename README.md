@@ -31,7 +31,9 @@ The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk 
 
 The first run is slow: it downloads the data and fills gaps in GLORYS (cached afterwards). Later runs start in a few minutes.
 
-Output is written to `output_dir`: daily means of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean_daily.jld2`, `arctic_sea_ice_daily.jld2`). The averaging interval is set in `[output]` in the config.
+Output is written to `output_dir`: daily means of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean_daily.jld2`, `arctic_sea_ice_daily.jld2`), and checkpoints of the full model state (`arctic_checkpoint*.jld2`). The averaging and checkpoint intervals are set in `[output]` in the config.
+
+To continue a run from its latest checkpoint, set `restart = true` and run again with the same config. The run still ends at `end_date`.
 
 ## Figures and movies
 
