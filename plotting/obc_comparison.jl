@@ -20,14 +20,16 @@ colours = Dict("flather" => :steelblue, "hybrid" => :black, "total_only" => :dar
 colour(name) = get(colours, name, :gray50)
 
 rms(a) = sqrt(mean(abs2, a))
+# GLORYS's transport on its own grid where the monitor has it, otherwise after interpolation onto the model grid
+glorys(d, edge) = haskey(d, "$(edge)_native_Sv") ? d["$(edge)_native_Sv"] : d["$(edge)_glorys_Sv"]
 Δfrom_start(a) = 100 .* (a .- a[1])      # cm
 
 @printf("\n%-12s %14s %14s %14s %16s %16s\n", "run", "Atlantic rms", "Pacific rms", "net std", "Δ⟨η⟩ − GLORYS", "budget residual")
 @printf("%-12s %14s %14s %14s %16s %16s\n", "", "error [Sv]", "error [Sv]", "[Sv]", "day 5 [cm]", "rms [Sv]")
 scores = []
 for (name, d) in data
-    eA = rms(d["atlantic_model_Sv"] .- d["atlantic_glorys_Sv"])
-    eP = rms(d["pacific_model_Sv"] .- d["pacific_glorys_Sv"])
+    eA = rms(d["atlantic_model_Sv"] .- glorys(d, "atlantic"))
+    eP = rms(d["pacific_model_Sv"] .- glorys(d, "pacific"))
     sN = std(d["net_model_Sv"])
     eη = Δfrom_start(d["eta_mean_m"])[end] - Δfrom_start(d["glorys_eta_mean_m"])[end]
     r  = d["budget_residual_Sv"][2:end]
@@ -48,8 +50,8 @@ for (name, d) in data
     lines!(axη, h, Δfrom_start(d["eta_mean_m"]), color = colour(name))
 end
 h, d = data[1][2]["hour"], data[1][2]
-lines!(axA, h, d["atlantic_glorys_Sv"], color = :gray, linestyle = :dash, label = "GLORYS")
-lines!(axP, h, d["pacific_glorys_Sv"],  color = :gray, linestyle = :dash)
+lines!(axA, h, glorys(d, "atlantic"), color = :gray, linestyle = :dash, label = "GLORYS")
+lines!(axP, h, glorys(d, "pacific"),  color = :gray, linestyle = :dash)
 lines!(axη, h, Δfrom_start(d["glorys_eta_mean_m"]), color = :gray, linestyle = :dash)
 for (k, s) in enumerate(scores)
     barplot!(axs, 1:3, [s.eA, s.eP, s.sN]; dodge = fill(k, 3), n_dodge = length(scores), color = colour(s.name))

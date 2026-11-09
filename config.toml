@@ -31,5 +31,7 @@ tracer_inflow_km_atlantic = 20   # T, S reservoir inflow relaxation length; Atla
 tracer_inflow_km_pacific  = 20   # T, S reservoir inflow relaxation length; Pacific side
 sponge = false                # GLORYS restoring in a rim along the open edges; keep off in normal use, potentially useful for debugging
 barotropic = "flather"        # barotropic transport at the open edges: "flather"; "hybrid" (each edge's net to GLORYS's, then the total); for comparison "total_only" (NEMO/ROMS) or "clamped" (MITgcm)
-total_net_inflow_Sv = "glorys_volume" # hybrid only: net inflow through both edges together. "glorys_volume": the model's volume changes as GLORYS's does (datum-free); a number in Sv; or "glorys" for GLORYS's own total
+total_net_inflow_Sv = "glorys_transport" # constrained schemes: total net inflow. "glorys_transport": GLORYS's, with the volume nudged to GLORYS's over volume_nudging_days; "glorys_volume": volume follows GLORYS's every step; a number in Sv; "glorys": no correction
+per_edge_target = "native"    # constrained schemes: each edge's net transport from GLORYS on its own grid ("native") or after interpolation ("interpolated")
+volume_nudging_days = 14      # "glorys_transport" only: time scale for the model's volume to follow GLORYS's (0: off)
 
