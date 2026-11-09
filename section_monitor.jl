@@ -219,3 +219,11 @@ ocean.output_writers[:barotropic] = JLD2Writer(ocean.model, (; U = U_daily, V = 
                                                schedule = AveragedTimeInterval(1days),
                                                overwrite_files = true)
 @info "Daily means: atlantic_edge_daily.jld2 (rows $(edge_rows_daily)), barotropic_daily.jld2"
+
+# ## Hourly free surface (whole domain), to follow how η changes during the first days (plotting/eta_hourly.jl)
+
+ocean.output_writers[:free_surface_hourly] = JLD2Writer(ocean.model, (; η = ocean.model.free_surface.displacement);
+                                                        filename = joinpath(output_dir, "free_surface_hourly.jld2"),
+                                                        schedule = TimeInterval(1hours),
+                                                        overwrite_files = true)
+@info "Hourly free surface: free_surface_hourly.jld2"
