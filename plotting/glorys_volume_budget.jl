@@ -30,10 +30,38 @@ include("../glorys_sections.jl")
 for date in dates, name in (:u_velocity, :v_velocity)
     Downloads.download(Metadatum(name; date, dataset, region, dir_kw...))   # skips files already there
 end
-atlantic_m³s, pacific_m³s = native_edge_transports(dates)
-atlantic = atlantic_m³s ./ 1e6   # Sv
-pacific  = pacific_m³s ./ 1e6
-net      = atlantic .- pacific   # net inflow
+# Net and gross (each direction separately) transport across a polyline of corners, as section_transport in
+# glorys_sections.jl. A net that is a small difference of large gross transports is sensitive to any section error.
+function section_net_and_gross(corners, lon, lat, Uᵉ, Uⁿ)
+    R = section_grid.radius
+    positive = negative = 0.0
+    for k in 1:length(corners) - 1
+        (λa, φa), (λb, φb) = corners[k], corners[k + 1]
+        Δλ = wrap_longitude(λb - λa)
+        λm, φm = λa + Δλ / 2, (φa + φb) / 2
+        dx = R * cosd(φm) * deg2rad(Δλ)
+        dy = R * deg2rad(φb - φa)
+        T = sample_lonlat(Uᵉ, lon, lat, λm, φm) * (-dy) + sample_lonlat(Uⁿ, lon, lat, λm, φm) * dx
+        T > 0 ? (positive += T) : (negative -= T)
+    end
+    return positive - negative, positive, negative
+end
+
+N = length(dates)
+atlantic, pacific = zeros(N), zeros(N)                     # net, Sv
+atlantic_gross, pacific_gross = zeros(N, 2), zeros(N, 2)   # (positive, negative) parts, Sv
+for (n, date) in enumerate(dates)
+    lon, lat, Uᵉ = native_depth_integral(:u_velocity, date)
+    _,   _,   Uⁿ = native_depth_integral(:v_velocity, date)
+    a = section_net_and_gross(atlantic_corners, lon, lat, Uᵉ, Uⁿ) ./ 1e6
+    p = section_net_and_gross(pacific_corners,  lon, lat, Uᵉ, Uⁿ) ./ 1e6
+    atlantic[n], atlantic_gross[n, 1], atlantic_gross[n, 2] = a
+    pacific[n],  pacific_gross[n, 1],  pacific_gross[n, 2]  = p
+end
+net = atlantic .- pacific   # net inflow
+@printf("\nGross transports (mean over the record): Atlantic %.1f Sv in, %.1f Sv out (net %.2f); Pacific %.1f Sv out, %.1f Sv in (net %.2f)\n",
+        mean(atlantic_gross[:, 1]), mean(atlantic_gross[:, 2]), mean(atlantic),
+        mean(pacific_gross[:, 1]), mean(pacific_gross[:, 2]), mean(pacific))
 
 # ## GLORYS's domain-mean free surface, on the model grid (as in the transport monitor)
 
@@ -48,7 +76,6 @@ mean_η = [sum(Array(interior(ηᴳ[n]))[:, :, 1] .* wet_area) / domain_area for
 # ## The budget between consecutive daily means
 
 Sv_per_cm_per_day = domain_area * 0.01 / 86400 / 1e6
-N = length(dates)
 volume_rate = [domain_area * (mean_η[n+1] - mean_η[n]) / 86400 / 1e6 for n in 1:N-1]   # Sv
 mean_net    = [(net[n] + net[n+1]) / 2 for n in 1:N-1]                                  # Sv, trapezoid
 D           = volume_rate .- mean_net
@@ -107,11 +134,13 @@ end
 csv_file = joinpath(output_dir, "glorys_volume_budget.csv")
 open(csv_file, "w") do io
     println(io, "date,atlantic_native_Sv,pacific_native_Sv,net_native_Sv,glorys_eta_mean_m,",
-                "interval_volume_rate_Sv,interval_net_Sv,interval_D_Sv,interval_model_freshwater_Sv")
+                "interval_volume_rate_Sv,interval_net_Sv,interval_D_Sv,interval_model_freshwater_Sv,",
+                "atlantic_in_Sv,atlantic_out_Sv,pacific_out_Sv,pacific_in_Sv")
     for n in 1:N
         k = min(n, N - 1)   # interval n → n+1 (the last row repeats the last interval)
-        @printf(io, "%s,%.4f,%.4f,%.4f,%.5f,%.4f,%.4f,%.4f,%.4f\n", Date(dates[n]), atlantic[n], pacific[n], net[n],
-                mean_η[n], volume_rate[k], mean_net[k], D[k], freshwater[k])
+        @printf(io, "%s,%.4f,%.4f,%.4f,%.5f,%.4f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%.3f\n", Date(dates[n]), atlantic[n],
+                pacific[n], net[n], mean_η[n], volume_rate[k], mean_net[k], D[k], freshwater[k],
+                atlantic_gross[n, 1], atlantic_gross[n, 2], pacific_gross[n, 1], pacific_gross[n, 2])
     end
 end
 
