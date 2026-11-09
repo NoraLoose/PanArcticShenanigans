@@ -1,7 +1,8 @@
 # How the model's free surface changes hour by hour: η(t) − η(0), from free_surface_hourly.jld2 (written when
 # [diagnostics] sections = true). The domain-mean change (the volume change through the edges and the surface) is
 # removed, so what is left is the redistribution of water. Prints, for each hour, the rms change in the window and
-# where the largest change is; maps a selection of hours.
+# where the largest change is; maps a selection of hours; and the hourly means over three regions (subpolar North
+# Atlantic, Nordic Seas, Arctic) with the period of the see-saw between the first two (eta_hourly_regions.png).
 #
 #   julia --project=. plotting/eta_hourly.jl <config.toml> [hour ...] [window=south|nordic|all|i₁:i₂,j₁:j₂]
 #
@@ -59,6 +60,42 @@ for h in sort(unique(vcat(0:min(48, round(Int, (η.times[end] - start_time) / ho
             100 * sqrt(mean(abs2, finite)), 100 * abs(w[k]), i, j,
             λnode(i, j, 1, mgrid, Center(), Center(), Center()), φnode(i, j, 1, mgrid, Center(), Center(), Center()))
 end
+
+# Region means of η(t) − η(0) (domain mean removed), every hour: a basin-scale oscillation shows as a see-saw between
+# the subpolar North Atlantic and the Nordic Seas. The period and decay of their difference are estimated from its
+# zero crossings and successive extrema.
+regions = (subpolar = (150:330, 15:90),     # Irminger Sea, Iceland Basin, Rockall (south of Greenland–Scotland)
+           nordic   = (250:360, 120:215),   # Norwegian, Lofoten and Greenland basins, Iceland Sea
+           arctic   = (200:330, 250:330))   # Eurasian Basin
+function region_mean(a, (is, js))
+    w = a[is, js]
+    finite = filter(isfinite, w)
+    return isempty(finite) ? NaN : mean(finite)
+end
+hours_all = [(η.times[n] - start_time) / hours for n in eachindex(η.times) if η.times[n] ≥ start_time - 60]
+records = [n for n in eachindex(η.times) if η.times[n] ≥ start_time - 60]
+series = Dict(name => [100 * region_mean(change(n), r) for n in records] for (name, r) in pairs(regions))
+seesaw = series[:nordic] .- series[:subpolar]
+println("\nRegion means of η(t) − η(0), domain mean removed (cm)")
+@printf("%6s %10s %10s %10s %16s\n", "hour", "subpolar", "nordic", "arctic", "nordic − subpolar")
+for (m, h) in enumerate(hours_all)
+    @printf("%6.1f %10.2f %10.2f %10.2f %16.2f\n", h, series[:subpolar][m], series[:nordic][m], series[:arctic][m], seesaw[m])
+end
+crossings = [hours_all[m] + (hours_all[m+1] - hours_all[m]) * seesaw[m] / (seesaw[m] - seesaw[m+1])
+             for m in 2:length(seesaw)-1 if sign(seesaw[m]) != sign(seesaw[m+1]) && seesaw[m] != 0]
+extrema_at = [m for m in 2:length(seesaw)-1 if (seesaw[m] - seesaw[m-1]) * (seesaw[m+1] - seesaw[m]) < 0]
+println("Zero crossings of nordic − subpolar (h): ", join((@sprintf("%.1f", c) for c in crossings), ", "))
+length(crossings) ≥ 2 && @printf("Period from the crossings: %.1f h (twice the mean spacing)\n", 2 * mean(diff(crossings)))
+println("Extrema of nordic − subpolar: ", join((@sprintf("%.1f h: %+.1f cm", hours_all[m], seesaw[m]) for m in extrema_at), "; "))
+
+fig_ts = Figure(size = (1000, 450), fontsize = 14)
+ax_ts = Axis(fig_ts[1, 1], xlabel = "hour", ylabel = "cm", title = "region means of η(t) − η(0), domain mean removed")
+for (name, color) in ((:subpolar, :steelblue), (:nordic, :firebrick), (:arctic, :gray50))
+    lines!(ax_ts, hours_all, series[name], color = color, label = String(name))
+end
+lines!(ax_ts, hours_all, seesaw, color = :black, linestyle = :dash, label = "nordic − subpolar")
+axislegend(ax_ts, position = :lb, framevisible = false)
+save(joinpath(output_dir, "eta_hourly_regions.png"), fig_ts)
 
 ncols = 4
 nrows = cld(length(hours_to_plot), ncols)
