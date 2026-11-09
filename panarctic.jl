@@ -117,7 +117,15 @@ end
 closure = CATKEVerticalDiffusivity()
 time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)
 
-ocean = ocean_simulation(grid;
+# Optional [ocean] bottom_drag_coefficient (NumericalEarth's default is 0.003) and bottom_drag_background_velocity
+# (m/s, added in quadrature to the resolved speed; default 0). NEMO's defaults are 0.001 and 0.05 (rn_Cd0 = 1e-3,
+# rn_ke0 = 2.5e-3 m² s⁻²).
+ocean_settings = get(config, "ocean", Dict())
+drag_kw = (; (Symbol(k) => Float64(ocean_settings[k])
+              for k in ("bottom_drag_coefficient", "bottom_drag_background_velocity") if haskey(ocean_settings, k))...)
+isempty(drag_kw) || @info "Bottom drag settings: $drag_kw"
+
+ocean = ocean_simulation(grid; drag_kw...,
                          clock = Clock(time = start_time),
                          free_surface = SplitExplicitFreeSurface(grid; cfl = 0.7, fixed_Δt = Δt),
                          momentum_advection = WENOVectorInvariant(; order=5, time_discretization),

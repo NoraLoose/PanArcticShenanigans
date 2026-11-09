@@ -2,7 +2,8 @@
 # [diagnostics] sections = true). The domain-mean change (the volume change through the edges and the surface) is
 # removed, so what is left is the redistribution of water. Prints, for each hour, the rms change in the window and
 # where the largest change is; maps a selection of hours; and the hourly means over three regions (subpolar North
-# Atlantic, Nordic Seas, Arctic) with the period of the see-saw between the first two (eta_hourly_regions.png).
+# Atlantic, Nordic Seas, Arctic) with the period of the see-saw between the first two (eta_hourly_regions.png); the
+# change by depth class (shelf, slope, deep) without removing the domain mean; and the same for GLORYS, day by day.
 #
 #   julia --project=. plotting/eta_hourly.jl <config.toml> [hour ...] [window=south|nordic|all|i₁:i₂,j₁:j₂]
 #
@@ -13,6 +14,8 @@ include("../setup.jl")
 
 using Printf, Statistics, CairoMakie
 using Oceananigans.Grids: λnode, φnode, static_column_depthᶜᶜᵃ
+using NumericalEarth.DataWrangling: NCDatasets, metadata_path
+using .NCDatasets: Dataset
 
 options = ARGS[2:end]
 window_option = something(findfirst(a -> startswith(a, "window="), options), 0)
@@ -110,6 +113,43 @@ else
         a = full_change(records[m])
         @printf("%6.1f %12.2f %10.2f %10.2f %10.2f\n", h, 100 * mean(a[wet]),
                 100 * class_mean(a, classes.shelf), 100 * class_mean(a, classes.slope), 100 * class_mean(a, classes.deep))
+    end
+
+    # The same means for GLORYS, the reference: its daily means are at noon and the run starts at noon on
+    # dates[start_index], so GLORYS day k is at hour 24k. GLORYS zos is sampled bilinearly at the model's cell centres;
+    # both are averaged over the cells where GLORYS is defined, so the two columns cover the same water.
+    λc = [λnode(i, j, 1, mgrid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny]
+    φc = [φnode(i, j, 1, mgrid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny]
+    function bilinear(F, lon, lat, x, y)    # regular (lon, lat) grid, periodic in longitude; NaN if any corner is NaN
+        fi = mod(x - lon[1], 360) / (lon[2] - lon[1])
+        fj = (y - lat[1]) / (lat[2] - lat[1])
+        i₀ = floor(Int, fi); j₀ = clamp(floor(Int, fj), 0, length(lat) - 2)
+        a, b = fi - i₀, clamp(fj - j₀, 0, 1)
+        i₁, i₂ = mod(i₀, length(lon)) + 1, mod(i₀ + 1, length(lon)) + 1
+        return (1 - a) * (1 - b) * F[i₁, j₀+1] + a * (1 - b) * F[i₂, j₀+1] + (1 - a) * b * F[i₁, j₀+2] + a * b * F[i₂, j₀+2]
+    end
+    function glorys_zos(date)
+        ds  = Dataset(metadata_path(Metadatum(:free_surface; date, dataset, region, dir_kw...)))
+        lon = Float64.(ds["longitude"][:])
+        lat = Float64.(ds["latitude"][:])
+        zos = Float64.(coalesce.(ds["zos"][:, :, 1], NaN32))
+        close(ds)
+        return [w ? bilinear(zos, lon, lat, x, y) : NaN for (w, x, y) in zip(wet, λc, φc)]
+    end
+    glorys_days = [k for k in 0:(length(dates) - start_index) if 24k ≤ hours_all[end] + 0.5]
+    zos₀ = glorys_zos(dates[start_index])
+    common = wet .& isfinite.(zos₀)
+    common_mean(a, mask) = (sel = mask .& common .& isfinite.(a); any(sel) ? 100 * mean(a[sel]) : NaN)
+    println("\nGLORYS against the model at the same hours: change since the start (cm), domain mean NOT removed")
+    @printf("%6s | %8s %8s %8s %8s | %8s %8s %8s %8s\n", "hour", "GLORYS", "shelf", "slope", "deep", "model", "shelf", "slope", "deep")
+    for k in glorys_days
+        glorys_δ = glorys_zos(dates[start_index + k]) .- zos₀
+        model_δ  = full_change(record_at(24k))
+        @printf("%6d | %8.2f %8.2f %8.2f %8.2f | %8.2f %8.2f %8.2f %8.2f\n", 24k,
+                common_mean(glorys_δ, wet), common_mean(glorys_δ, classes.shelf),
+                common_mean(glorys_δ, classes.slope), common_mean(glorys_δ, classes.deep),
+                common_mean(model_δ, wet), common_mean(model_δ, classes.shelf),
+                common_mean(model_δ, classes.slope), common_mean(model_δ, classes.deep))
     end
 end
 
