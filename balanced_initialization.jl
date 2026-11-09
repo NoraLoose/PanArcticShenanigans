@@ -21,7 +21,7 @@
 
 using Oceananigans.Operators: Δxᶠᶜᶜ, Δyᶜᶠᶜ, Δxᶜᶠᶜ, Δyᶠᶜᶜ, Azᶜᶜᶜ, Δzᶠᶜᶜ, Δzᶜᶠᶜ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Coriolis: x_f_cross_U, y_f_cross_U
-using Oceananigans.Grids: static_column_depthᶜᶜᵃ
+using Oceananigans.Grids: static_column_depthᶜᶜᵃ, λnode, φnode
 using Oceananigans.OutputWriters: jldopen
 using CairoMakie, Statistics
 
@@ -139,52 +139,59 @@ balance_mode != false && let model = ocean.model
     end
     rms(a) = sqrt(mean(abs2, filter(isfinite, a)))
 
-    # ## 1. Projection
+    # ## 1. Projection (as a function: it is repeated after η changes, since on the z-star grid the layer
+    # thicknesses, and so the transports, scale with 1 + η/H)
 
-    u = on_architecture(CPU(), model.velocities.u)
-    v = on_architecture(CPU(), model.velocities.v)
-    uₐ, vₐ = Array(interior(u)), Array(interior(v))
-    size(uₐ) == (Nx + 1, Ny, Nzc) && size(vₐ) == (Nx, Ny + 1, Nzc) ||
-        error("unexpected velocity sizes $(size(uₐ)), $(size(vₐ))")
-
-    D₀ = area_divergence(transports(uₐ, vₐ)...)
-    φ  = solve(D₀)
-    Δu_max = 0.0
-    for j in 1:Ny, i in 2:Nx
-        Hᵘ[i, j] > 0 && id[i-1, j] > 0 && id[i, j] > 0 || continue
-        Δu = -(φ[id[i, j]] - φ[id[i-1, j]]) / Δxᶠᶜᶜ(i, j, k₀, cgrid)
-        Δu_max = max(Δu_max, abs(Δu))
-        for k in 1:Nzc
-            wetcell(i, j, k, cgrid, Face(), Center(), Center()) && (uₐ[i, j, k] += Δu)
+    function project!()
+        local u, v, uₐ, vₐ, D₀, D₁, φ, largest, Ux, Vy
+        u = on_architecture(CPU(), model.velocities.u)
+        v = on_architecture(CPU(), model.velocities.v)
+        uₐ, vₐ = Array(interior(u)), Array(interior(v))
+        size(uₐ) == (Nx + 1, Ny, Nzc) && size(vₐ) == (Nx, Ny + 1, Nzc) ||
+            error("unexpected velocity sizes $(size(uₐ)), $(size(vₐ))")
+        D₀ = area_divergence(transports(uₐ, vₐ)...)
+        φ  = solve(D₀)
+        largest = (0.0, :u, 0, 0)
+        for j in 1:Ny, i in 2:Nx
+            Hᵘ[i, j] > 0 && id[i-1, j] > 0 && id[i, j] > 0 || continue
+            Δu = -(φ[id[i, j]] - φ[id[i-1, j]]) / Δxᶠᶜᶜ(i, j, k₀, cgrid)
+            abs(Δu) > largest[1] && (largest = (abs(Δu), :u, i, j))
+            for k in 1:Nzc
+                wetcell(i, j, k, cgrid, Face(), Center(), Center()) && (uₐ[i, j, k] += Δu)
+            end
         end
-    end
-    for j in 2:Ny, i in 1:Nx
-        Hᵛ[i, j] > 0 && id[i, j-1] > 0 && id[i, j] > 0 || continue
-        Δv = -(φ[id[i, j]] - φ[id[i, j-1]]) / Δyᶜᶠᶜ(i, j, k₀, cgrid)
-        Δu_max = max(Δu_max, abs(Δv))
-        for k in 1:Nzc
-            wetcell(i, j, k, cgrid, Center(), Face(), Center()) && (vₐ[i, j, k] += Δv)
+        for j in 2:Ny, i in 1:Nx
+            Hᵛ[i, j] > 0 && id[i, j-1] > 0 && id[i, j] > 0 || continue
+            Δv = -(φ[id[i, j]] - φ[id[i, j-1]]) / Δyᶜᶠᶜ(i, j, k₀, cgrid)
+            abs(Δv) > largest[1] && (largest = (abs(Δv), :v, i, j))
+            for k in 1:Nzc
+                wetcell(i, j, k, cgrid, Center(), Face(), Center()) && (vₐ[i, j, k] += Δv)
+            end
         end
+        Ux, Vy = transports(uₐ, vₐ)
+        D₁ = area_divergence(Ux, Vy)
+        set!(model; u = uₐ, v = vₐ, intrinsic_velocities = true)
+        return D₀, D₁, Vy, largest
     end
-    Ux, Vy = transports(uₐ, vₐ)
-    D₁ = area_divergence(Ux, Vy)
-    set!(model; u = uₐ, v = vₐ, intrinsic_velocities = true)
+    function report_largest(largest)
+        Δ, kind, i, j = largest
+        H = kind === :u ? Hᵘ[i, j] : Hᵛ[i, j]
+        φ_ = φnode(i, j, 1, cgrid, kind === :u ? Face() : Center(), kind === :u ? Center() : Face(), Center())
+        λ_ = λnode(i, j, 1, cgrid, kind === :u ? Face() : Center(), kind === :u ? Center() : Face(), Center())
+        @printf("   largest velocity change %.2f cm/s, at the %s-face (%d, %d), %.2f°E %.2f°N, wet depth %.0f m\n",
+                100Δ, kind, i, j, λ_, φ_, H)
+    end
 
+    D₀, D₁, Vy, largest = project!()
     before, after = field_of(cm_per_day(D₀)), field_of(cm_per_day(D₁))
-    println("\nBalanced initialization, step 1 (projection): largest velocity change $(round(100Δu_max, digits = 2)) cm/s")
+    println("\nBalanced initialization, step 1 (projection):")
+    report_largest(largest)
     nordic(a) = a[200:380, 60:240]
     @printf("   initial dη/dt = −∇·U, rms: raw %.1f → %.2f cm/day, 7×7 mean %.1f → %.2f cm/day; Nordic Seas 31×31 mean %.2f → %.3f cm/day\n",
             rms(before), rms(after), rms(smooth(before)), rms(smooth(after)), rms(smooth(nordic(before); m = 15)),
             rms(smooth(nordic(after); m = 15)))
     @printf("   domain-mean dη/dt from the edge transports: %.2f cm/day (kept)\n",
             100 * 86400 * sum(D₁) / sum(area) * -1)
-
-    # Barotropic streamfunction of the corrected transport (Sv), at cell corners, from the western land eastward:
-    # ψ(i + 1, j) = ψ(i, j) + Δx V. Along j = 1 it is the cumulative transport through the Atlantic edge.
-    ψ = zeros(Nx + 1, Ny + 1)
-    for j in 1:Ny+1, i in 1:Nx
-        ψ[i+1, j] = ψ[i, j] + Δxᶜᶠᶜ(i, j, k₀, cgrid) * Vy[i, j] / 1e6
-    end
 
     # ## 2. Balanced η
 
@@ -242,6 +249,23 @@ balance_mode != false && let model = ocean.model
                 100 * rms(smooth(change)), 100 * maximum(abs, filter(isfinite, change)))
         @printf("   divergence of the depth-integrated momentum tendency, rms: %.2e → %.2e m s⁻² (7×7 mean %.2e → %.2e)\n",
                 rms(t₀), rms(t₁), rms(smooth(t₀)), rms(smooth(t₁)))
+
+        # The new η changes the z-star layer thicknesses, and so the transports: project once more, on a fresh copy
+        # of the grid (its thicknesses now follow the new η; the solver's weights keep the old ones, a small effect)
+        cgrid = on_architecture(CPU(), model.grid)
+        D₀′, D₁′, Vy, largest′ = project!()
+        after = field_of(cm_per_day(D₁′))
+        println("Balanced initialization, step 1 again (the layer thicknesses changed with η):")
+        report_largest(largest′)
+        @printf("   initial dη/dt = −∇·U, rms: raw %.1f → %.2f cm/day, 7×7 mean %.1f → %.2f cm/day\n",
+                rms(field_of(cm_per_day(D₀′))), rms(after), rms(smooth(field_of(cm_per_day(D₀′)))), rms(smooth(after)))
+    end
+
+    # Barotropic streamfunction of the final transport (Sv), at cell corners, from the western land eastward:
+    # ψ(i + 1, j) = ψ(i, j) + Δx V. Along j = 1 it is the cumulative transport through the Atlantic edge.
+    ψ = zeros(Nx + 1, Ny + 1)
+    for j in 1:Ny+1, i in 1:Nx
+        ψ[i+1, j] = ψ[i, j] + Δxᶜᶠᶜ(i, j, k₀, cgrid) * Vy[i, j] / 1e6
     end
 
     # ## Output
