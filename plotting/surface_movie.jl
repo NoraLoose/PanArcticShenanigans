@@ -1,29 +1,36 @@
-# Movie of SST, SSS, surface speed and ice volume from the output of panarctic.jl.
+# Movie of SST, SSS, surface speed and ice volume from the daily means written by panarctic.jl.
 #
 #   julia +1.13 --project=. plotting/surface_movie.jl [config.toml]
 #
-# Reads arctic_ocean_surface.jld2 and arctic_sea_ice_surface.jld2 from `output_dir` and writes
-# arctic_sea.mp4 there. Runs on the CPU and does not need the grid or input data.
+# Reads arctic_ocean_daily.jld2 and arctic_sea_ice_daily.jld2 from `output_dir` and writes arctic_sea.mp4
+# there. Runs on the CPU and does not need the grid or input data. The 3D fields are read one day at a time.
 
 include("../config.jl")
 
 using Oceananigans, Oceananigans.Units
+using Oceananigans.OutputReaders: OnDisk
 using CairoMakie
 
-To = FieldTimeSeries(ocean_surface_file,   "T")
-So = FieldTimeSeries(ocean_surface_file,   "S")
-Uo = FieldTimeSeries(ocean_surface_file,   "𝒱")
-hi = FieldTimeSeries(sea_ice_surface_file, "he")
+T  = FieldTimeSeries(ocean_output_file,   "T";  backend = OnDisk())
+S  = FieldTimeSeries(ocean_output_file,   "S";  backend = OnDisk())
+u  = FieldTimeSeries(ocean_output_file,   "u";  backend = OnDisk())
+v  = FieldTimeSeries(ocean_output_file,   "v";  backend = OnDisk())
+h  = FieldTimeSeries(sea_ice_output_file, "h";  backend = OnDisk())
+ℵ  = FieldTimeSeries(sea_ice_output_file, "ℵ";  backend = OnDisk())
 
-times = To.times
-n = Observable(length(times))
+times = T.times
+Nz    = size(T.grid, 3)
+n     = Observable(1)
 
-title = @lift "Arctic — hour " * string(round(Int, (times[$n] - times[1]) / hours))   # hours since the start of the run
+surface(φ) = interior(φ, :, :, Nz)
+speed(n)   = interior(compute!(Field(@at((Center, Center, Center), sqrt(u[n]^2 + v[n]^2)), indices = (:, :, Nz))), :, :, 1)
 
-Tₙ = @lift(To[$n])
-Sₙ = @lift(So[$n])
-Uₙ = @lift(Uo[$n])
-hₙ = @lift(hi[$n])
+title = @lift "Arctic — day " * string(round(Int, (times[$n] - times[1]) / days) + 1)   # days since the start of the run
+
+Tₙ = @lift surface(T[$n])
+Sₙ = @lift surface(S[$n])
+Uₙ = @lift speed($n)
+hₙ = @lift interior(h[$n], :, :, 1) .* interior(ℵ[$n], :, :, 1)   # ice volume per area
 
 fig = Figure(size = (1100, 1000))
 fig[0, 1:4] = Label(fig, title, fontsize = 20, tellwidth = false)

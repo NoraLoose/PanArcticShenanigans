@@ -253,26 +253,28 @@ function ice_progress(sim)
 end
 add_callback!(simulation, ice_progress, TimeInterval(1hours))
 
-# ## Output: hourly fields near the surface
+# ## Output: daily means
+#
+# Averages over `average_hours` (daily by default) of the 3D ocean state, the free surface and the sea ice,
+# in single precision.
 
-u, v, w = ocean.model.velocities
-h = sea_ice.model.ice_thickness
-ℵ = sea_ice.model.ice_concentration
-𝒱 = @at((Center, Center, Center), sqrt(u^2 + v^2))
-he = h * ℵ
-ocean_outputs = merge(ocean.model.tracers, (; 𝒱))
+output = config["output"]
 
-sea_ice_outputs = (; he, uᵢ = sea_ice.model.velocities.u, vᵢ = sea_ice.model.velocities.v)
+(; u, v) = ocean.model.velocities
+η = ocean.model.free_surface.displacement
+ocean_outputs   = (; T = ocean.model.tracers.T, S = ocean.model.tracers.S, u, v, η)
+sea_ice_outputs = (; h = sea_ice.model.ice_thickness, ℵ = sea_ice.model.ice_concentration,
+                     uᵢ = sea_ice.model.velocities.u, vᵢ = sea_ice.model.velocities.v)
 
-ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
-                                            filename = ocean_surface_file,
-                                            indices = (:, :, grid.Nz-2),
-                                            schedule = TimeInterval(1hours),
-                                            overwrite_files = true)
+# Attached to the coupled simulation, whose run loop accumulates the averages every time step.
+simulation.output_writers[:ocean] = JLD2Writer(ocean.model, ocean_outputs;
+                                               filename = ocean_output_file,
+                                               schedule = AveragedTimeInterval(output["average_hours"] * hours),
+                                               overwrite_files = true)
 
-sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
-                                              filename = sea_ice_surface_file,
-                                              schedule = TimeInterval(1hours),
-                                              overwrite_files = true)
+simulation.output_writers[:sea_ice] = JLD2Writer(sea_ice.model, sea_ice_outputs;
+                                                 filename = sea_ice_output_file,
+                                                 schedule = AveragedTimeInterval(output["average_hours"] * hours),
+                                                 overwrite_files = true)
 
 run!(simulation)

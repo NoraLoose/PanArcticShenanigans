@@ -21,6 +21,9 @@ dt_minutes = 10           # time step
 [atmosphere]
 jra55 = "multi_year"   # "multi_year": JRA55 for the run's own dates; "repeat_year": the 1990–91 repeat year
 
+[output]
+average_hours   = 24      # time-averaged output (3D ocean, free surface, sea ice), written to output_dir
+
 [paths]
 data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
 output_dir = "."  # where output (.jld2) and figures/movies from the plotting/ scripts are written
