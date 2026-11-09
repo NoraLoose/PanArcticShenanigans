@@ -4,7 +4,7 @@
 # their own mean over the window, so a datum difference drops out. Also printed: how far the model's and GLORYS's η′
 # have each moved from the common initial state (GLORYS at the start), and a map of model − GLORYS η′.
 #
-#   julia --project=. plotting/barotropic_map.jl <config.toml> [day ...]
+#   julia --project=. plotting/barotropic_map.jl <config.toml> [day ...] [window=nordic|south|all|i₁:i₂,j₁:j₂]
 #
 # The config is the run's own (it sets the dates and the output directory). Days are the model's daily means, counted
 # from the start (1 = the first 24 hours; default 1 2 3 4). Each model mean (noon to noon) is compared with GLORYS at
@@ -18,8 +18,22 @@ using Oceananigans.Grids: λnode, φnode, static_column_depthᶜᶜᵃ
 using NumericalEarth.DataWrangling: NCDatasets, metadata_path
 using .NCDatasets: Dataset, dimnames
 
-days_to_plot = length(ARGS) ≥ 2 ? parse.(Int, ARGS[2:end]) : [1, 2, 3, 4]
-irange, jrange = 200:380, 60:240     # Denmark Strait to Fram Strait and the Barents Sea Opening (15 km grid)
+# Further arguments: days (integers) and optionally window=nordic (default), window=south (the subpolar North
+# Atlantic up to the Atlantic edge, with the Nordic Seas), window=all, or window=i₁:i₂,j₁:j₂
+options = ARGS[2:end]
+window_option = something(findfirst(a -> startswith(a, "window="), options), 0)
+window_name = window_option > 0 ? options[window_option][8:end] : "nordic"
+days_arguments = [a for a in options if !startswith(a, "window=")]
+days_to_plot = isempty(days_arguments) ? [1, 2, 3, 4] : parse.(Int, days_arguments)
+irange, jrange = if window_name == "nordic"
+    200:380, 60:240       # Denmark Strait to Fram Strait and the Barents Sea Opening (15 km grid)
+elseif window_name == "south"
+    120:420, 1:240        # from the Atlantic edge (j = 1) to Fram Strait
+elseif window_name == "all"
+    1:Nx, 1:Ny
+else
+    Tuple(Meta.eval(Meta.parse(x)) for x in split(window_name, ','))
+end
 
 # ## Model daily means
 
@@ -109,6 +123,12 @@ anomaly(a) = a .- mean(filter(isfinite, a))
 # The model starts from GLORYS at the start time, so GLORYS there is the common initial η′
 η₀ = anomaly(last(glorys_at(start_time)))
 
+# The model's own initial state, if the daily-mean file has a record at the start (written at iteration 0); it differs
+# from GLORYS's when the initial state was balanced
+n_start = findfirst(n -> abs(U.times[n] - start_time) < 60, eachindex(U.times))
+ηᵐ₀ = isnothing(n_start) ? nothing : anomaly(model_η(n_start))
+isnothing(ηᵐ₀) || @printf("model's own initial η′ − GLORYS η′: rms %.1f cm\n", 100 * sqrt(mean(filter(isfinite, (ηᵐ₀ .- η₀) .^ 2))))
+
 fig = Figure(size = (2000, 430 * length(days_to_plot)), fontsize = 13)
 speed_kw = (colormap = :speed, colorrange = (0, 600), nan_color = :gray80)
 levels = -0.5:0.05:0.5
@@ -120,7 +140,9 @@ for (r, d) in enumerate(days_to_plot)
     Sm, ηm = model_speed(n), anomaly(model_η(n))
     Sg, ηg = glorys_at(tc)
     ηg = anomaly(ηg)
+    local hm, hd, he
     rmscm(a) = 100 * sqrt(mean(filter(isfinite, a .^ 2)))
+    isnothing(ηᵐ₀) || @printf("day %d: rms change of the model's η′ since its own start: %.1f cm\n", d, rmscm(ηm .- ηᵐ₀))
     @printf("day %d: max |U| model %.0f m²/s, GLORYS %.0f m²/s; mean |U| model %.1f, GLORYS %.1f; rms η′ model − GLORYS %.1f cm; rms change of η′ since the start: model %.1f cm, GLORYS %.1f cm\n",
             d, maximum(filter(isfinite, Sm)), maximum(filter(isfinite, Sg)), mean(filter(isfinite, Sm)),
             mean(filter(isfinite, Sg)), rmscm(ηm .- ηg), rmscm(ηm .- η₀), rmscm(ηg .- η₀))
@@ -141,6 +163,6 @@ for (r, d) in enumerate(days_to_plot)
     r == length(days_to_plot) && (ax1.xlabel = ax2.xlabel = ax3.xlabel = ax4.xlabel = "i")
 end
 
-figure_file = joinpath(output_dir, "barotropic_map.png")
+figure_file = joinpath(output_dir, window_name == "nordic" ? "barotropic_map.png" : "barotropic_map_$(replace(window_name, r"[^A-Za-z0-9]" => "_")).png")
 save(figure_file, fig)
 @info "Wrote $figure_file (window i = $irange, j = $jrange; η contours every 5 cm)"
