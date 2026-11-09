@@ -1,7 +1,8 @@
 # Daily-mean depth-integrated transport |U| (m² s⁻¹) and free surface around Iceland and the Nordic Seas, model
 # (barotropic_daily.jld2, written when [diagnostics] sections = true) against GLORYS, both on the model grid. η is
 # drawn as contours on top of |U|: a balanced barotropic flow follows them. Model and GLORYS η are each relative to
-# their own mean over the window, so a datum difference drops out.
+# their own mean over the window, so a datum difference drops out. Also printed: how far the model's and GLORYS's η′
+# have each moved from the common initial state (GLORYS at the start), and a map of model − GLORYS η′.
 #
 #   julia --project=. plotting/barotropic_map.jl <config.toml> [day ...]
 #
@@ -105,7 +106,10 @@ anomaly(a) = a .- mean(filter(isfinite, a))
 
 # ## Figure: one row per day; model |U|, GLORYS |U|, model − GLORYS |U|; η contours every 5 cm
 
-fig = Figure(size = (1500, 430 * length(days_to_plot)), fontsize = 13)
+# The model starts from GLORYS at the start time, so GLORYS there is the common initial η′
+η₀ = anomaly(last(glorys_at(start_time)))
+
+fig = Figure(size = (2000, 430 * length(days_to_plot)), fontsize = 13)
 speed_kw = (colormap = :speed, colorrange = (0, 600), nan_color = :gray80)
 levels = -0.5:0.05:0.5
 for (r, d) in enumerate(days_to_plot)
@@ -116,9 +120,10 @@ for (r, d) in enumerate(days_to_plot)
     Sm, ηm = model_speed(n), anomaly(model_η(n))
     Sg, ηg = glorys_at(tc)
     ηg = anomaly(ηg)
-    @printf("day %d: max |U| model %.0f m²/s, GLORYS %.0f m²/s; mean |U| model %.1f, GLORYS %.1f; rms η' difference %.1f cm\n",
+    rmscm(a) = 100 * sqrt(mean(filter(isfinite, a .^ 2)))
+    @printf("day %d: max |U| model %.0f m²/s, GLORYS %.0f m²/s; mean |U| model %.1f, GLORYS %.1f; rms η′ model − GLORYS %.1f cm; rms change of η′ since the start: model %.1f cm, GLORYS %.1f cm\n",
             d, maximum(filter(isfinite, Sm)), maximum(filter(isfinite, Sg)), mean(filter(isfinite, Sm)),
-            mean(filter(isfinite, Sg)), 100 * sqrt(mean(filter(isfinite, (ηm .- ηg) .^ 2))))
+            mean(filter(isfinite, Sg)), rmscm(ηm .- ηg), rmscm(ηm .- η₀), rmscm(ηg .- η₀))
 
     ax1 = Axis(fig[r, 1], title = "day $d, model |U| (m² s⁻¹), η′ contours", ylabel = "j", aspect = DataAspect())
     hm = heatmap!(ax1, irange, jrange, Sm; speed_kw...)
@@ -130,7 +135,10 @@ for (r, d) in enumerate(days_to_plot)
     ax3 = Axis(fig[r, 4], title = "day $d, model − GLORYS |U|", aspect = DataAspect())
     hd = heatmap!(ax3, irange, jrange, Sm .- Sg; colormap = :balance, colorrange = (-300, 300), nan_color = :gray80)
     Colorbar(fig[r, 5], hd)
-    r == length(days_to_plot) && (ax1.xlabel = ax2.xlabel = ax3.xlabel = "i")
+    ax4 = Axis(fig[r, 6], title = "day $d, η′ model − GLORYS (m)", aspect = DataAspect())
+    he = heatmap!(ax4, irange, jrange, ηm .- ηg; colormap = :balance, colorrange = (-0.2, 0.2), nan_color = :gray80)
+    Colorbar(fig[r, 7], he)
+    r == length(days_to_plot) && (ax1.xlabel = ax2.xlabel = ax3.xlabel = ax4.xlabel = "i")
 end
 
 figure_file = joinpath(output_dir, "barotropic_map.png")
