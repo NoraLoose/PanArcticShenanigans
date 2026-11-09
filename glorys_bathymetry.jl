@@ -44,9 +44,12 @@ function glorys_bottom_height(target_grid; minimum_depth = 15, interpolation_pas
     z = ifelse.(isnan.(depth) .| (depth .≤ 0), Float64(land_height), -depth)
 
     Δλ, Δφ = lon[2] - lon[1], lat[2] - lat[1]
-    TX = isapprox(length(lon) * Δλ, 360; atol = Δλ / 2) ? Periodic : Bounded
+    periodic = isapprox(length(lon) * Δλ, 360; atol = Δλ / 2)
+    TX = periodic ? Periodic : Bounded
+    west = lon[1] - Δλ / 2
+    east = periodic ? west + 360 : lon[end] + Δλ / 2   # exactly 360° (the file's spacing has round-off)
     native_grid = LatitudeLongitudeGrid(CPU(); size = (length(lon), length(lat), 1),
-                                        longitude = (lon[1] - Δλ / 2, lon[end] + Δλ / 2),
+                                        longitude = (west, east),
                                         latitude  = (lat[1] - Δφ / 2, min(90, lat[end] + Δφ / 2)),
                                         z = (0, 1), topology = (TX, Bounded, Bounded), halo = (10, 10, 1))
     native_z = Field{Center, Center, Nothing}(native_grid)
