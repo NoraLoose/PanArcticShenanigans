@@ -34,6 +34,8 @@ end
 
 file = joinpath(output_dir, "free_surface_hourly.jld2")
 η = FieldTimeSeries(file, "η")
+last_hour = (η.times[end] - start_time) / hours
+hours_to_plot = filter(h -> h ≤ last_hour + 0.01, hours_to_plot)   # only hours the run reached
 mgrid = η.grid
 wet = try
     [static_column_depthᶜᶜᵃ(i, j, mgrid) > 0 for i in 1:Nx, j in 1:Ny]

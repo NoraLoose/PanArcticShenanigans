@@ -311,6 +311,9 @@ add_callback!(simulation, update_surface_freshwater!, IterationInterval(1))
 # Straits), daily means near the Atlantic edge and of the barotropic flow
 get(get(config, "diagnostics", Dict()), "sections", false) && include("section_monitor.jl")
 
+# Depth-integrated momentum budget by depth class: which term moves water onto or off the shelves
+get(get(config, "diagnostics", Dict()), "tendencies", false) && include("tendency_budget.jl")
+
 # ## Output: hourly fields near the surface
 
 u, v, w = ocean.model.velocities
