@@ -54,21 +54,27 @@ grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(Array(interior(bo
 
 # ## GLORYS dates and region
 #
-# Daily means (centred at noon), with one extra day before the start date and after the end of the run as
-# margin, where GLORYS has them (it starts on 1993-01-01). Time counts from 00:00 on dates[1], and the run
-# starts at noon on the start date, dates[start_index].
+# The run goes from noon on start_date to noon on end_date (or to end_date's time of day, if it has one).
+# GLORYS daily means (centred at noon) are loaded with one extra day before and after the run as margin,
+# where GLORYS has them (it starts on 1993-01-01). Model time counts from 00:00 on dates[1].
 
 dataset    = GLORYSDaily()
 available  = all_dates(dataset, :temperature)
 start_date = DateTime(config["time"]["start_date"])
-run_days   = ceil(Int, config["time"]["stop_hours"] / 24)
-dates      = max(start_date - Day(1), first(available)) : Day(1) : min(start_date + Day(max(run_days, 1) + 1), last(available))
+end_date   = config["time"]["end_date"]
+run_start  = start_date + Hour(12)
+run_end    = end_date isa Date ? DateTime(end_date) + Hour(12) : DateTime(end_date)
+run_end > run_start || error("end_date ($end_date) must be after noon on start_date ($(Date(start_date))).")
+
+last_mean  = ceil(run_end - Hour(12), Day)   # date of the first daily mean at or after the end of the run
+dates      = max(start_date - Day(1), first(available)) : Day(1) : min(last_mean + Day(1), last(available))
 start_index = findfirst(==(start_date), dates)
 isnothing(start_index) && error("start_date $start_date is outside the GLORYS record ($(first(available)) to $(last(available))).")
-start_time  = (start_index - 1) * days + 12hours
-last_noon   = (length(dates) - 1) * days + 12hours
-start_time + config["time"]["stop_hours"] * hours ≤ last_noon ||
-    error("The run ends after the last GLORYS daily mean ($(last(available))); use an earlier start_date or a shorter run.")
+last_mean ≤ last(available) || error("The run ends after the last GLORYS daily mean ($(last(available))).")
+
+seconds(Δ) = Dates.value(Millisecond(Δ)) / 1000
+start_time = seconds(run_start - dates[1])
+stop_time  = seconds(run_end   - dates[1])
 
 region  = BoundingBox(longitude = (-180, 180), latitude = (φ_south, 90))
 

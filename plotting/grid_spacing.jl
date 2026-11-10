@@ -1,4 +1,4 @@
-# Horizontal grid spacing (Δx, Δy) over the ocean. Writes grid_spacing.png to `output_dir`.
+# Horizontal grid spacing (Δx, Δy) over the ocean. Writes grid_spacing.png to `figure_dir`.
 #
 #   julia +1.13 --project=. plotting/grid_spacing.jl [config.toml]
 #
@@ -23,4 +23,4 @@ ax2 = Axis(fig[1, 3], xlabel = "grid i", title = "Δy [km]", aspect = DataAspect
 hm2 = heatmap!(ax2, Δy, colormap = :viridis)
 Colorbar(fig[1, 4], hm2)
 
-save(joinpath(output_dir, "grid_spacing.png"), fig)
+save(joinpath(figure_dir, "grid_spacing.png"), fig)

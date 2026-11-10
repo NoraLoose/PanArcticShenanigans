@@ -224,7 +224,6 @@ coupled_model = EarthSystemModel(; ocean, sea_ice, land, atmosphere, radiation, 
 
 # ## Simulation
 
-stop_time = start_time + config["time"]["stop_hours"] * hours
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 wall_time = Ref(time_ns())
@@ -254,26 +253,40 @@ function ice_progress(sim)
 end
 add_callback!(simulation, ice_progress, TimeInterval(1hours))
 
-# ## Output: hourly fields near the surface
+# ## Output: time averages and checkpoints
+#
+# Averages over `average_hours` (daily by default) of the 3D ocean state, the free surface and the sea ice,
+# in single precision. Checkpoints of the full model state every `checkpoint_days`, for restarts.
 
-u, v, w = ocean.model.velocities
-h = sea_ice.model.ice_thickness
-ℵ = sea_ice.model.ice_concentration
-𝒱 = @at((Center, Center, Center), sqrt(u^2 + v^2))
-he = h * ℵ
-ocean_outputs = merge(ocean.model.tracers, (; 𝒱))
+output  = config["output"]
+restart = output["restart"]
 
-sea_ice_outputs = (; he, uᵢ = sea_ice.model.velocities.u, vᵢ = sea_ice.model.velocities.v)
+(; u, v) = ocean.model.velocities
+η = ocean.model.free_surface.displacement
+ocean_outputs   = (; T = ocean.model.tracers.T, S = ocean.model.tracers.S, u, v, η)
+sea_ice_outputs = (; h = sea_ice.model.ice_thickness, ℵ = sea_ice.model.ice_concentration,
+                     uᵢ = sea_ice.model.velocities.u, vᵢ = sea_ice.model.velocities.v)
 
-ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
-                                            filename = ocean_surface_file,
-                                            indices = (:, :, grid.Nz-2),
-                                            schedule = TimeInterval(1hours),
-                                            overwrite_files = true)
+# Attached to the coupled simulation, whose run loop accumulates the averages every time step.
+# On a restart, append to the existing files instead of overwriting them.
+simulation.output_writers[:ocean] = JLD2Writer(ocean.model, ocean_outputs;
+                                               filename = ocean_output_file,
+                                               schedule = AveragedTimeInterval(output["average_hours"] * hours),
+                                               overwrite_files = !restart)
 
-sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
-                                              filename = sea_ice_surface_file,
-                                              schedule = TimeInterval(1hours),
-                                              overwrite_files = true)
+simulation.output_writers[:sea_ice] = JLD2Writer(sea_ice.model, sea_ice_outputs;
+                                                 filename = sea_ice_output_file,
+                                                 schedule = AveragedTimeInterval(output["average_hours"] * hours),
+                                                 overwrite_files = !restart)
+
+simulation.output_writers[:checkpointer] = Checkpointer(coupled_model;
+                                                        schedule = TimeInterval(output["checkpoint_days"] * days),
+                                                        dir = output_dir,
+                                                        prefix = checkpoint_prefix)
+
+# Continue from the latest checkpoint: it replaces the initial conditions and sets all clocks.
+# @allowscalar: Oceananigans restores the open-boundary radiation buffers with an element-wise copy into
+# GPU arrays (small boundary rows, so this is cheap).
+restart && CUDA.@allowscalar set!(simulation; checkpoint = :latest)
 
 run!(simulation)
