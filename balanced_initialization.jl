@@ -13,7 +13,10 @@
 #    The correction is uniform in depth: the vertical shear and the vorticity of U/H are unchanged.
 # 2. ("full") Balanced η: g L η = ∇·(Gᵇᶜ + Gᶜᵒʳ), Gᵇᶜ = −Σ ∂pHY′ Δz (from the initial T and S), Gᶜᵒʳ = −Σ f × u Δz
 #    (the corrected u), so the depth-integrated momentum tendency has no divergence at t = 0: no gravity waves are
-#    launched. Advection, friction and wind are left out. η keeps GLORYS's area mean (its datum at the edges).
+#    launched. η keeps GLORYS's area mean (its datum at the edges). By default advection, friction and wind are left
+#    out; [initialization] balance_terms = ["advection", "drag"] adds the depth-integrated momentum advection (the
+#    model's WENO vector-invariant operator, with its numerical dissipation) and the quadratic bottom drag (Cd and u_bg
+#    as in [ocean]) to the right-hand side. Wind is zero in the no-wind runs.
 #
 # Prints how much each step changes, writes balanced_initialization.jld2/.png (with the barotropic streamfunction of
 # the corrected transport) in output_dir. With [diagnostics] initial_vorticity on, that diagnostic then measures the
@@ -21,6 +24,7 @@
 
 using Oceananigans.Operators: Δxᶠᶜᶜ, Δyᶜᶠᶜ, Δxᶜᶠᶜ, Δyᶠᶜᶜ, Azᶜᶜᶜ, Δzᶠᶜᶜ, Δzᶜᶠᶜ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Coriolis: x_f_cross_U, y_f_cross_U
+using Oceananigans.Advection: U_dot_∇u, U_dot_∇v, U_dot_∇u_hydrostatic_metric, U_dot_∇v_hydrostatic_metric
 using Oceananigans.Grids: static_column_depthᶜᶜᵃ, λnode, φnode
 using Oceananigans.OutputWriters: jldopen
 using CairoMakie, Statistics
@@ -31,6 +35,13 @@ sparse_arrays = Base.require(Base.PkgId(Base.UUID("2f01184e-e22b-5df5-ae63-d93eb
 balance_mode = get(get(config, "initialization", Dict()), "balance", false)
 balance_mode in (false, "projection", "full") ||
     error("[initialization] balance must be \"projection\" or \"full\" (or absent)")
+balance_terms = String.(get(get(config, "initialization", Dict()), "balance_terms", String[]))
+all(in(("advection", "drag")), balance_terms) ||
+    error("[initialization] balance_terms may contain \"advection\" and \"drag\"")
+balance_drag = let ocean_settings = get(config, "ocean", Dict())
+    (Cd  = Float64(get(ocean_settings, "bottom_drag_coefficient", 0.003)),
+     ubg = Float64(get(ocean_settings, "bottom_drag_background_velocity", 0.0)))
+end
 
 balance_mode != false && let model = ocean.model
     g     = model.free_surface.gravitational_acceleration
@@ -200,17 +211,47 @@ balance_mode != false && let model = ocean.model
     if balance_mode == "full"
         u = on_architecture(CPU(), model.velocities.u)   # corrected, with halos filled by set!
         v = on_architecture(CPU(), model.velocities.v)
+        w = on_architecture(CPU(), model.velocities.w)
         pHY = on_architecture(CPU(), model.pressure.pHY′)
         coriolis = model.coriolis
+        advection = model.advection.momentum
+        U₃ = (; u, v, w)
+        with_advection, with_drag = "advection" in balance_terms, "drag" in balance_terms
+        Cd, ubg = balance_drag.Cd, balance_drag.ubg
         Gx, Gy = zeros(Nx + 1, Ny), zeros(Nx, Ny + 1)   # interior faces only; the edges are the boundary's
-        for j in 1:Ny, i in 2:Nx, k in 1:Nzc
-            wetcell(i, j, k, cgrid, Face(), Center(), Center()) || continue
-            Gx[i, j] -= (∂xᶠᶜᶜ(i, j, k, cgrid, pHY) + x_f_cross_U(i, j, k, cgrid, coriolis, (u, v))) * Δzᶠᶜᶜ(i, j, k, cgrid)
+        for j in 1:Ny, i in 2:Nx
+            kb = 0
+            for k in 1:Nzc
+                wetcell(i, j, k, cgrid, Face(), Center(), Center()) || continue
+                kb == 0 && (kb = k)
+                G = ∂xᶠᶜᶜ(i, j, k, cgrid, pHY) + x_f_cross_U(i, j, k, cgrid, coriolis, (u, v))
+                with_advection && (G += U_dot_∇u(i, j, k, cgrid, advection, U₃) +
+                                        U_dot_∇u_hydrostatic_metric(i, j, k, cgrid, advection, U₃, U₃))
+                Gx[i, j] -= G * Δzᶠᶜᶜ(i, j, k, cgrid)
+            end
+            if with_drag && kb > 0
+                ub = u[i, j, kb]
+                vb = (v[i-1, j, kb] + v[i, j, kb] + v[i-1, j+1, kb] + v[i, j+1, kb]) / 4
+                Gx[i, j] -= Cd * sqrt(ub^2 + vb^2 + ubg^2) * ub
+            end
         end
-        for j in 2:Ny, i in 1:Nx, k in 1:Nzc
-            wetcell(i, j, k, cgrid, Center(), Face(), Center()) || continue
-            Gy[i, j] -= (∂yᶜᶠᶜ(i, j, k, cgrid, pHY) + y_f_cross_U(i, j, k, cgrid, coriolis, (u, v))) * Δzᶜᶠᶜ(i, j, k, cgrid)
+        for j in 2:Ny, i in 1:Nx
+            kb = 0
+            for k in 1:Nzc
+                wetcell(i, j, k, cgrid, Center(), Face(), Center()) || continue
+                kb == 0 && (kb = k)
+                G = ∂yᶜᶠᶜ(i, j, k, cgrid, pHY) + y_f_cross_U(i, j, k, cgrid, coriolis, (u, v))
+                with_advection && (G += U_dot_∇v(i, j, k, cgrid, advection, U₃) +
+                                        U_dot_∇v_hydrostatic_metric(i, j, k, cgrid, advection, U₃, U₃))
+                Gy[i, j] -= G * Δzᶜᶠᶜ(i, j, k, cgrid)
+            end
+            if with_drag && kb > 0
+                vb = v[i, j, kb]
+                ub = (u[i, j-1, kb] + u[i+1, j-1, kb] + u[i, j, kb] + u[i+1, j, kb]) / 4
+                Gy[i, j] -= Cd * sqrt(ub^2 + vb^2 + ubg^2) * vb
+            end
         end
+        isempty(balance_terms) || @info "Balanced η includes: pressure, Coriolis, $(join(balance_terms, ", "))"
         η̃ = solve(area_divergence(Gx, Gy) ./ g)
 
         # Each component keeps GLORYS's area mean
