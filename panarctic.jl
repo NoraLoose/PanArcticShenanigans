@@ -33,6 +33,25 @@ uᵉˣᵗ = FieldTimeSeries(Metadata(:u_velocity;   dates, dataset, region, dir_
 vᵉˣᵗ = FieldTimeSeries(Metadata(:v_velocity;   dates, dataset, region, dir_kw...), grid, inpainting=100, time_indices_in_memory=length(dates))
 ηᵉˣᵗ = glorys_free_surface()
 
+# Datum test ([initialization] eta_offset = "mean" or a number in m): subtract a constant from GLORYS η everywhere and
+# at all times, in the initial state and the boundary data. The physics does not depend on the datum (the hybrid and
+# clamped edges are immune to it, and the volume target uses only changes in η), but z-star levels do: z = z̃(1 + η/H) + η.
+# Any change in the run is then a numerical effect of the absolute η.
+eta_offset = get(get(config, "initialization", Dict()), "eta_offset", 0)
+if eta_offset != 0
+    η_shift = if eta_offset == "mean"
+        let offset_grid = on_architecture(CPU(), grid)
+            column_area = [Oceananigans.Grids.static_column_depthᶜᶜᵃ(i, j, offset_grid) > 0 ?
+                           Oceananigans.Operators.Azᶜᶜᶜ(i, j, 1, offset_grid) : 0.0 for i in 1:Nx, j in 1:Ny]
+            sum(Array(interior(ηᵉˣᵗ[start_index]))[:, :, 1] .* column_area) / sum(column_area)
+        end
+    else
+        Float64(eta_offset)
+    end
+    parent(ηᵉˣᵗ.data) .-= η_shift
+    @warn @sprintf("Datum test: GLORYS η shifted by %+.3f m (initial state and boundary data)", -η_shift)
+end
+
 # Rotate GLORYS velocities from east/north into the grid frame (grid_frame_u, grid_frame_v in kernels.jl).
 
 for n in eachindex(uᵉˣᵗ.times)
@@ -55,22 +74,29 @@ for n in eachindex(uᵉˣᵗ.times)
 end
 @info "Rotated GLORYS velocities into the grid frame and interpolated them to faces"
 
-# ## Rest-state test (optional): [initialization] rest = "uniform" or "glorys"
+# ## Rest-state test (optional): [initialization] rest = "uniform", "homogeneous" or "glorys"
 #
 # A check for motion made by the numerics alone (pressure gradients over sloping topography, partial cells, z-star in
-# thin columns). The ocean starts at rest (u = v = η = 0), the edges are held at zero velocity (the GLORYS boundary
-# velocities and η are set to zero, so use barotropic = "clamped" with a total of 0 Sv), and the run is ocean only: no
-# atmosphere and no sea-ice coupling, so no surface fluxes of heat, salt, freshwater or momentum. "uniform" also replaces
-# T and S by their mean on each level, so nothing should move at all; "glorys" keeps GLORYS's T and S, so whatever moves
-# is the adjustment to its density field.
+# thin columns). The ocean starts at rest (u = v = 0, η = rest_eta, default 0), the edges are held at zero velocity (the
+# GLORYS boundary velocities are set to zero and η to rest_eta, so use barotropic = "clamped" with a total of 0 Sv), and
+# the run is ocean only: no atmosphere and no sea-ice coupling, so no surface fluxes of heat, salt, freshwater or
+# momentum. "uniform" replaces T and S by their mean on each level; "homogeneous" by one value each (the mean over wet
+# cells), so the exact solution is rest for any uniform η, and anything that moves comes from the z-star levels
+# (z = z̃(1 + η/H) + η tilts them over slopes when η ≠ 0) or the partial cells; "glorys" keeps GLORYS's T and S, so
+# whatever moves is the adjustment to its density field.
 rest_state = get(get(config, "initialization", Dict()), "rest", "none")
-rest_state in ("none", "uniform", "glorys") || error("[initialization] rest must be \"uniform\" or \"glorys\" (or absent)")
+rest_state in ("none", "uniform", "homogeneous", "glorys") ||
+    error("[initialization] rest must be \"uniform\", \"homogeneous\" or \"glorys\" (or absent)")
 ocean_only = rest_state != "none"
 if ocean_only
     get(config["initialization"], "balance", false) == false || error("[initialization] rest and balance cannot be combined")
-    for series in (uᵉˣᵗ, vᵉˣᵗ, uᶠ, vᶠ, ηᵉˣᵗ)
+    eta_offset == 0 || error("[initialization] rest and eta_offset cannot be combined; use rest_eta")
+    rest_eta = Float64(get(config["initialization"], "rest_eta", 0.0))
+    for series in (uᵉˣᵗ, vᵉˣᵗ, uᶠ, vᶠ)
         fill!(parent(series.data), 0)
     end
+    fill!(parent(ηᵉˣᵗ.data), rest_eta)
+    rest_eta == 0 || @warn @sprintf("Rest-state test: uniform η = %+.3f m at the start and in the boundary data", rest_eta)
     if rest_state == "uniform"
         rest_grid = on_architecture(CPU(), grid)
         rest_wet = [!immersed_inactive_node(i, j, k, rest_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny, k in 1:Nz]
@@ -84,6 +110,19 @@ if ocean_only
                 fill_halo_regions!(series[n])
             end
             @info @sprintf("Rest-state test: %s uniform on each level, from %.3f (bottom) to %.3f (top)", name, profile[1], profile[end])
+        end
+    end
+    if rest_state == "homogeneous"
+        rest_grid = on_architecture(CPU(), grid)
+        rest_wet = [!immersed_inactive_node(i, j, k, rest_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny, k in 1:Nz]
+        for (name, series) in (("T", Tᵉˣᵗ), ("S", Sᵉˣᵗ))
+            c₀ = Array(interior(series[start_index]))
+            value = sum(c₀[rest_wet]) / count(rest_wet)
+            for n in eachindex(series.times)
+                set!(series[n], value)
+                fill_halo_regions!(series[n])
+            end
+            @info @sprintf("Rest-state test: %s = %.3f everywhere", name, value)
         end
     end
     @warn "Rest-state test ($rest_state): starting at rest, edges at zero velocity, ocean only (no atmosphere or sea ice)"
