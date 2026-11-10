@@ -3,6 +3,7 @@
 # Figures and movies: scripts in plotting/ (one per figure).
 
 include("setup.jl")
+include("transports.jl")
 
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ, intrinsic_vector
@@ -12,6 +13,7 @@ using NumericalEarth.DataWrangling: DatasetRestoring, UVelocity, VVelocity
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
 using Printf
 using ClimaSeaIce: IncrementalRemapping
+using NumericalEarth.EarthSystemModels: reference_density, heat_capacity
 
 # ## GLORYS boundary data
 
@@ -278,6 +280,23 @@ simulation.output_writers[:sea_ice] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                                  filename = sea_ice_output_file,
                                                  schedule = AveragedTimeInterval(output["average_hours"] * hours),
                                                  overwrite_files = !restart)
+
+# Transports through the sections in [transports] and the open boundaries (transports.jl): computed every time step and
+# averaged over the same interval, so they include the covariance of velocity and tracers within each average, which
+# transports computed offline from the averaged fields (analysis/transports.jl) miss.
+if get(transport_settings(config), "online", false)
+    sections = vcat(gateway_sections(grid, config), boundary_sections(grid))
+    ρ₀, cₚ = reference_density(ocean), heat_capacity(ocean)
+    transports = section_transports(grid, u, v, ocean.model.tracers.T, ocean.model.tracers.S, sections;
+                                    reference_values(config)..., reference_density = ρ₀, heat_capacity = cₚ)
+
+    simulation.output_writers[:transports] = JLD2Writer(ocean.model, transports;
+                                                        filename = transport_output_file,
+                                                        schedule = AveragedTimeInterval(output["average_hours"] * hours),
+                                                        init = (file, model) -> save_transport_metadata!(file, config, sections;
+                                                                   reference_density = ρ₀, heat_capacity = cₚ),
+                                                        overwrite_files = !restart)
+end
 
 simulation.output_writers[:checkpointer] = Checkpointer(coupled_model;
                                                         schedule = TimeInterval(output["checkpoint_days"] * days),

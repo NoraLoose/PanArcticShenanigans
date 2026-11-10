@@ -19,3 +19,5 @@ figure_dir = mkpath(config["paths"]["figure_dir"])   # figures and movies
 ocean_output_file   = joinpath(output_dir, "arctic_ocean.jld2")
 sea_ice_output_file = joinpath(output_dir, "arctic_sea_ice.jld2")
 checkpoint_prefix   = "arctic_checkpoint"   # checkpoints in output_dir, written by panarctic.jl
+transport_output_file         = joinpath(output_dir, "arctic_transports.jld2")           # online, by panarctic.jl
+offline_transport_output_file = joinpath(output_dir, "arctic_transports_offline.jld2")   # by analysis/transports.jl
