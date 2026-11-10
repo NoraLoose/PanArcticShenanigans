@@ -63,3 +63,5 @@ julia +1.13 --project=. plotting/transport_sections.jl  [config.toml]   # transp
 ```
 
 `surface_movie.jl` only reads the output files and doesn't need a GPU. The others build the grid (and `glorys_free_surface.jl` reads the GLORYS data), so run them where `panarctic.jl` runs.
+
+To look at the figures in Jupyter, `julia +1.13 plotting/make_notebooks.jl` writes each plotting script as a notebook to `plotting/notebooks/` (not tracked; rerun after changing a script). Set the config file in the first code cell.
