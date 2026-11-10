@@ -48,7 +48,9 @@ for name in run_writer_names
     delete!(ocean.output_writers, name)
 end
 
-Oceananigans.restore_prognostic_state!(ocean.model, initial_state)
+# Oceananigans 0.116.1 restores the open-boundary radiation buffers with copyto! from host to device offset arrays,
+# which falls back to scalar indexing on the GPU. The buffers are small (one row per edge), so allow it here.
+CUDA.@allowscalar Oceananigans.restore_prognostic_state!(ocean.model, initial_state)
 simulation.stop_time = start_time + config["time"]["stop_hours"] * hours
 
 include("run_outputs.jl")
