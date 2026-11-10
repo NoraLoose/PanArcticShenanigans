@@ -44,6 +44,19 @@
 # lateral friction), and the WENO total's three parts: vorticity flux (ζ + f is not in it; only ζ × u), kinetic-energy
 # gradient (with the divergence part of the upwinding) and vertical advection.
 #
+# Circulation budget (fourth table, tendency_circulation.csv). The tables above measure the cross-isobath components of
+# the forces, i.e. accelerations of the flow off the shelf; a steady flow off the shelf has none. In steady state the
+# flow across an isobath is set by the forces along it: around the boundary of a region,
+#
+#     f × (outflow) ≈ ∮ (advection + baroclinic + drag + surface) · t ds,
+#
+# while the barotropic pressure term ∮ g D ∂η/∂s ds vanishes along an isobath (D constant). Each term's circulation Γ
+# is summed over the region's vorticity points with the model's C-grid curl (interior edges cancel; land faces carry
+# nothing), and shown as the dη/dt it would drive, −Γ/(f̄ A) in cm/day, with f̄ the region's mean Coriolis parameter.
+# The Coriolis line is shown as +Γ/(f̄ A), ≈ the actual dη/dt when the flow is steady; "imbalance" is the sum of all
+# terms' Γ/(f̄ A), the circulation tendency (≈ 0 when steady). The regions are the vorticity points whose wet
+# neighbours are all in the depth class, so the loop follows the 200 m (shelf) or 200 and 1000 m (slope) contours.
+#
 # Closure check: one model step after each budget time the change in each region's dη/dt is measured and printed
 # beside the predicted sum ("measured" is (dη/dt(t + Δt) − dη/dt(t))/Δt).
 
@@ -87,11 +100,39 @@ let ocean_settings = get(config, "ocean", Dict())
                             ubg = Float64(get(ocean_settings, "bottom_drag_background_velocity", 0.0)))
 end
 
+circulation_terms = (:centered_advection, :weno_dissipation, :baroclinic_pressure, :bottom_drag, :surface_stress,
+                     :barotropic_pressure, :coriolis)
+circulation_file  = joinpath(output_dir, "tendency_circulation.csv")
+open(circulation_file, "w") do io
+    println(io, "hour,region,actual_deta_dt_cm_per_day,", join(("$(t)_cm_per_day" for t in circulation_terms), ","),
+            ",imbalance_cm_per_day")
+end
+
 # Regions by static depth, away from the open edges (whose faces are set by the boundary conditions)
 tendency_regions = let cgrid = on_architecture(CPU(), grid)
     H = [static_column_depthᶜᶜᵃ(i, j, cgrid) for i in 1:Nx, j in 1:Ny]
     inside = [3 ≤ j ≤ Ny - 2 for i in 1:Nx, j in 1:Ny]
     (shelf = inside .& (0 .< H .< 200), slope = inside .& (200 .≤ H .< 1000), deep = inside .& (H .≥ 1000))
+end
+
+# Vorticity points (i, j) for i in 2:Nx, j in 2:Ny, between cells i-1:i, j-1:j: in a region when at least one of the four
+# cells is wet and every wet one is in the region; with the region's area and mean Coriolis parameter
+circulation_regions = let cgrid = on_architecture(CPU(), grid)
+    H = [static_column_depthᶜᶜᵃ(i, j, cgrid) for i in 1:Nx, j in 1:Ny]
+    wet = H .> 0
+    regions = Dict{Symbol, Any}()
+    for (name, mask) in pairs(tendency_regions)
+        corners = Tuple{Int, Int}[]
+        for j in 2:Ny, i in 2:Nx
+            cells = ((i-1, j-1), (i, j-1), (i-1, j), (i, j))
+            any(c -> wet[c...], cells) && all(c -> !wet[c...] || mask[c...], cells) && push!(corners, (i, j))
+        end
+        area = sum(Oceananigans.Operators.Azᶠᶠᶜ(i, j, 1, cgrid) for (i, j) in corners)
+        f̄ = sum(Oceananigans.Coriolis.fᶠᶠᵃ(i, j, 1, cgrid, ocean.model.coriolis) * Oceananigans.Operators.Azᶠᶠᶜ(i, j, 1, cgrid)
+                for (i, j) in corners) / area
+        regions[name] = (; corners, area, f̄)
+    end
+    (; (k => regions[k] for k in keys(tendency_regions))...)
 end
 
 # The surface momentum flux J. NumericalEarth's coupled ocean uses an IMEX condition, J = Jₑ + λ u_top, with the
@@ -265,6 +306,40 @@ function tendency_budget(sim)
             parts = [acceleration * region_inflow(Ax[t], Ay[t], mask) for t in advection_split_terms]
             @printf("%-7s %9.3f %9.3f %17.3f %15.3f %12.3f %9.3f\n", name, parts...)
             println(io, join((@sprintf("%.3f", hour), name, (@sprintf("%.5f", x) for x in parts)...), ","))
+        end
+    end
+
+    # Circulation of a face field around a region: Σ over its vorticity points of the C-grid curl times area
+    function circulation(Fx, Fy, corners)
+        Γ = 0.0
+        for (i, j) in corners
+            Γ += Fy[i, j] * Δyᶜᶠᶜ(i, j, Nzc, cgrid) - Fy[i-1, j] * Δyᶜᶠᶜ(i-1, j, Nzc, cgrid) -
+                 Fx[i, j] * Δxᶠᶜᶜ(i, j, Nzc, cgrid) + Fx[i, j-1] * Δxᶠᶜᶜ(i, j-1, Nzc, cgrid)
+        end
+        return Γ
+    end
+    fields = Dict(:centered_advection => (Ax[:centered], Ay[:centered]),
+                  :weno_dissipation   => (Ax[:weno_dissipation], Ay[:weno_dissipation]),
+                  :baroclinic_pressure => (Gx[:baroclinic_pressure], Gy[:baroclinic_pressure]),
+                  :bottom_drag        => (Gx[:bottom_drag], Gy[:bottom_drag]),
+                  :surface_stress     => (Gx[:surface_stress], Gy[:surface_stress]),
+                  :barotropic_pressure => (Gx[:barotropic_pressure], Gy[:barotropic_pressure]),
+                  :coriolis           => (Gx[:coriolis], Gy[:coriolis]))
+    per_day = 100 * 86400
+    @printf("Circulation budget (cm/day): the dη/dt each term drives in steady state, −Γ/(f̄A); Coriolis as +Γ/(f̄A) ≈ actual\n")
+    @printf("%-7s %8s %10s %10s %11s %8s %9s %11s %9s %10s\n", "region", "actual", "adv_centr", "weno_diss",
+            "baroclinic", "drag", "surface", "barotropic", "Coriolis", "imbalance")
+    open(circulation_file, "a") do io
+        for name in keys(tendency_regions)
+            r = circulation_regions[name]
+            Γ = Dict(t => circulation(fields[t]..., r.corners) for t in circulation_terms)
+            drives = [t == :coriolis ? per_day * Γ[t] / (r.f̄ * r.area) : -per_day * Γ[t] / (r.f̄ * r.area)
+                      for t in circulation_terms]
+            imbalance = per_day * sum(values(Γ)) / (r.f̄ * r.area)
+            actual = 24 * rate_before_step[name]
+            @printf("%-7s %8.2f %10.2f %10.2f %11.2f %8.2f %9.2f %11.2f %9.2f %10.2f\n", name, actual, drives..., imbalance)
+            println(io, join((@sprintf("%.3f", hour), name, @sprintf("%.4f", actual),
+                              (@sprintf("%.4f", x) for x in drives)..., @sprintf("%.4f", imbalance)), ","))
         end
     end
     return nothing
