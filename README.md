@@ -59,7 +59,7 @@ julia +1.13 --project=. plotting/bathymetry.jl          [config.toml]   # bathym
 julia +1.13 --project=. plotting/grid_spacing.jl        [config.toml]   # grid_spacing.png
 julia +1.13 --project=. plotting/glorys_free_surface.jl [config.toml]   # arctic_free_surface.mp4 (GLORYS boundary data)
 julia +1.13 --project=. plotting/surface_movie.jl       [config.toml]   # arctic_sea.mp4 (SST, SSS, surface speed, ice volume) from the time-averaged output
-julia +1.13 --project=. plotting/transport_sections.jl  [config.toml]   # transport_sections.png (faces of each transport section on the bathymetry)
+julia +1.13 --project=. plotting/transport_sections.jl  [config.toml]   # transport_sections.png, transport_section_faces.png (the transport sections on the bathymetry)
 ```
 
 `surface_movie.jl` only reads the output files and doesn't need a GPU. The others build the grid (and `glorys_free_surface.jl` reads the GLORYS data), so run them where `panarctic.jl` runs.

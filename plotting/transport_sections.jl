@@ -1,13 +1,13 @@
-# The transport sections (see transports.jl) on the bathymetry of the model grid: all of them on the whole domain, and
-# the faces of each in a zoomed panel.
-# Writes transport_sections.png to `figure_dir`. Use it to check the sections after changing the grid or the waypoints.
+# The transport sections (see transports.jl) on the bathymetry of the model grid: all of them on the whole domain
+# (transport_sections.png), and the faces of each, zoomed in (transport_section_faces.png), written to `figure_dir`.
+# Use them to check the sections after changing the grid or the waypoints.
 #
 #   julia +1.13 --project=. plotting/transport_sections.jl [config.toml]
 #
 # Builds the grid from the config, like panarctic.jl, so run it where panarctic.jl runs.
-# Faces: red where positive u or v flows in the positive direction of the section, blue where it flows against it;
-# thin where closed at the surface (land). The black line is the great-circle path through the waypoints. On the whole
-# domain, the dashed lines are the open boundaries, whose transports are also computed.
+# The open boundaries, whose transports are also computed, are shown on the whole domain. In the zoomed panels, faces are
+# red where positive u or v flows in the positive direction of the section (into the Arctic), blue where it flows
+# against it, and thin where closed at the surface (land).
 
 include("../setup.jl")
 include("../transports.jl")
@@ -57,39 +57,50 @@ end
 
 bathymetry!(ax) = heatmap!(ax, h_bottom, colormap = :deep, colorrange = (-3000, 0), nan_color = :gray80)
 
-fig = Figure(size = (1100, 1700))
+# ## All sections on the whole domain
 
-# All sections on the whole domain, labelled at their first waypoint
-ax = Axis(fig[1, 1:2], title = "Transport sections", xlabel = "grid i", ylabel = "grid j", aspect = DataAspect())
-hm = bathymetry!(ax)
-for (name, sᵘ, sᵛ) in sections
-    linesegments!(ax, [p for (ends, _, _) in face_segments(sᵘ, sᵛ) for p in ends], color = :red, linewidth = 2)
-    text!(ax, Point2f(nearest_cell(waypoints[name][1][1], waypoints[name][2][1])...), text = name,
-          fontsize = 14, offset = (6, 6))
-end
-for (j, name) in ((0.5, "atlantic_boundary"), (Ny + 0.5, "pacific_boundary"))
-    lines!(ax, [Point2f(0.5, j), Point2f(Nx + 0.5, j)], color = :black, linestyle = :dash, linewidth = 2)
-    text!(ax, Point2f(Nx / 2, j), text = name, fontsize = 14, align = (:center, j < Ny / 2 ? :bottom : :top), offset = (0, j < Ny / 2 ? 4 : -4))
-end
-Colorbar(fig[1, 3], hm, label = "bottom height [m]")
+section_colors = [:red, :darkorange, :magenta, :lime, :cyan, :yellow]   # bright, against the bathymetry colours
 
-# Each section's faces, zoomed in
+fig = Figure(size = (900, 800))
+ax  = Axis(fig[1, 1], title = "Transport sections", xlabel = "grid i", ylabel = "grid j", aspect = DataAspect())
+hm  = bathymetry!(ax)
+for (n, (name, sᵘ, sᵛ)) in enumerate(sections)
+    linesegments!(ax, [p for (ends, _, _) in face_segments(sᵘ, sᵛ) for p in ends],
+                  color = section_colors[mod1(n, end)], linewidth = 4, label = name)
+end
+for (j, name, style) in ((0.5, "atlantic_boundary", :dash), (Ny + 0.5, "pacific_boundary", :dot))
+    lines!(ax, [Point2f(0.5, j), Point2f(Nx + 0.5, j)], color = :black, linestyle = style, linewidth = 3, label = name)
+end
+Colorbar(fig[1, 2], hm, label = "bottom height [m]")
+Legend(fig[2, 1:2], ax, orientation = :horizontal, nbanks = 2, framevisible = false)
+
+save(joinpath(figure_dir, "transport_sections.png"), fig)
+@info "Wrote $(joinpath(figure_dir, "transport_sections.png"))"
+
+# ## The faces of each section
+
+fig_faces = Figure(size = (1100, 1000))
 for (n, (name, sᵘ, sᵛ)) in enumerate(sections)
     faces = vcat(findall(!=(0), sᵘ), findall(!=(0), sᵛ))
     i₁, i₂ = extrema(I[1] for I in faces)
     j₁, j₂ = extrema(I[2] for I in faces)
     pad = 8
 
-    row, column = fldmod1(n, 2)
-    ax = Axis(fig[row + 1, column], title = name, xlabel = "grid i", ylabel = "grid j", aspect = DataAspect())
-    bathymetry!(ax)
-    lines!(ax, path_in_grid(waypoints[name]...), color = :black, linewidth = 1)
+    panel = Axis(fig_faces[fldmod1(n, 2)...], title = name, xlabel = "grid i", ylabel = "grid j", aspect = DataAspect())
+    map = bathymetry!(panel)
+    lines!(panel, path_in_grid(waypoints[name]...), color = :black, linewidth = 1)
     for (ends, color, width) in face_segments(sᵘ, sᵛ)
-        linesegments!(ax, [ends...], color = color, linewidth = width)
+        linesegments!(panel, [ends...], color = color, linewidth = width)
     end
-    limits!(ax, i₁ - pad, i₂ + pad, j₁ - pad, j₂ + pad)
+    limits!(panel, i₁ - pad, i₂ + pad, j₁ - pad, j₂ + pad)
+    n == 1 && Colorbar(fig_faces[1:2, 3], map, label = "bottom height [m]")
 end
-rowsize!(fig.layout, 1, Relative(0.55))
+Legend(fig_faces[3, 1:2],
+       [LineElement(color = :red, linewidth = 3), LineElement(color = :blue, linewidth = 3),
+        LineElement(color = :gray40, linewidth = 1), LineElement(color = :black, linewidth = 1)],
+       ["face, positive u or v flows the positive way", "face, positive u or v flows the negative way",
+        "thin: closed at the surface (land)", "great-circle path through the waypoints"],
+       orientation = :horizontal, nbanks = 2, framevisible = false)
 
-save(joinpath(figure_dir, "transport_sections.png"), fig)
-@info "Wrote $(joinpath(figure_dir, "transport_sections.png"))"
+save(joinpath(figure_dir, "transport_section_faces.png"), fig_faces)
+@info "Wrote $(joinpath(figure_dir, "transport_section_faces.png"))"
