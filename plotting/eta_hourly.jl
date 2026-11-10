@@ -117,11 +117,70 @@ else
                 100 * class_mean(a, classes.shelf), 100 * class_mean(a, classes.slope), 100 * class_mean(a, classes.deep))
     end
 
+    # Where the shelf change comes from: the shelf cells (H < 200 m) split into regions by longitude and latitude (each
+    # cell goes to the first region whose box contains it), with each region's mean change and its contribution to
+    # the shelf mean (share of shelf cells × its mean; the contributions add up to the shelf mean). Then whether the
+    # change is spread over the shelves or concentrated: the part of the shelf mean carried by the 5% of shelf cells
+    # that changed most.
+    λc = [λnode(i, j, 1, mgrid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny]
+    φc = [φnode(i, j, 1, mgrid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny]
+    shelf_regions = [
+        ("hudson",          (λ, φ) -> -96 ≤ λ < -64 && 50 ≤ φ < 66),
+        ("labrador",        (λ, φ) -> -70 ≤ λ < -50 && φ < 66),
+        ("baffin_caa",      (λ, φ) -> -125 ≤ λ < -50 && φ ≥ 66),
+        ("greenland",       (λ, φ) -> -50 ≤ λ < -10 && φ ≥ 59),
+        ("iceland_scotland_ireland", (λ, φ) -> -30 ≤ λ < -4 && φ < 66),
+        ("north_sea",       (λ, φ) -> -4 ≤ λ < 13 && φ < 61.5),
+        ("baltic",          (λ, φ) -> 13 ≤ λ < 32 && φ < 66),
+        ("norwegian",       (λ, φ) -> 4 ≤ λ < 25 && 61.5 ≤ φ < 71.5),
+        ("barents_white",   (λ, φ) -> 13 ≤ λ < 60 && φ ≥ 64),
+        ("siberian",        (λ, φ) -> λ ≥ 60),
+        ("bering_chukchi_beaufort", (λ, φ) -> λ < -125),
+    ]
+    shelf_region = fill("other", Nx, Ny)
+    for i in 1:Nx, j in 1:Ny
+        classes.shelf[i, j] || continue
+        for (name, inside) in shelf_regions
+            if inside(mod(λc[i, j] + 180, 360) - 180, φc[i, j])
+                shelf_region[i, j] = name
+                break
+            end
+        end
+    end
+    region_names = vcat(first.(shelf_regions), "other")
+    shelf_count = count(classes.shelf)
+    region_hours = filter(h -> h ≤ hours_all[end] + 0.01, [1, 3, 6, 12, 18, 24, 36, 48])
+    println("\nShelf cells by region: mean change (cm) / contribution to the shelf mean (cm), domain mean NOT removed")
+    @printf("%-26s %7s", "region", "cells")
+    foreach(h -> @printf(" %15s", @sprintf("hour %d", h)), region_hours)
+    println()
+    shelf_changes = Dict(h => full_change(record_at(h)) for h in region_hours)
+    for name in region_names
+        mask = classes.shelf .& (shelf_region .== name)
+        any(mask) || continue
+        @printf("%-26s %6.1f%%", name, 100 * count(mask) / shelf_count)
+        for h in region_hours
+            a = shelf_changes[h]
+            @printf(" %7.2f / %5.2f", 100 * mean(a[mask]), 100 * sum(a[mask]) / shelf_count)
+        end
+        println()
+    end
+    @printf("%-26s %7s", "all shelves", "")
+    foreach(h -> @printf(" %7.2f / %5.2f", 100 * mean(shelf_changes[h][classes.shelf]), 100 * mean(shelf_changes[h][classes.shelf])),
+            region_hours)
+    println()
+    println("Part of the shelf mean carried by the 5% of shelf cells with the largest |change|:")
+    for h in region_hours
+        a = shelf_changes[h][classes.shelf]
+        order = sortperm(abs.(a), rev = true)
+        top = order[1:max(1, round(Int, 0.05 * length(a)))]
+        @printf("   hour %4d: shelf mean %6.2f cm, of which the top 5%% carry %6.2f cm\n", h, 100 * mean(a),
+                100 * sum(a[top]) / length(a))
+    end
+
     # The same means for GLORYS, the reference: its daily means are at noon and the run starts at noon on
     # dates[start_index], so GLORYS day k is at hour 24k. GLORYS zos is sampled bilinearly at the model's cell centres;
     # both are averaged over the cells where GLORYS is defined, so the two columns cover the same water.
-    λc = [λnode(i, j, 1, mgrid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny]
-    φc = [φnode(i, j, 1, mgrid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny]
     function bilinear(F, lon, lat, x, y)    # regular (lon, lat) grid, periodic in longitude; NaN if any corner is NaN
         fi = mod(x - lon[1], 360) / (lon[2] - lon[1])
         fj = (y - lat[1]) / (lat[2] - lat[1])

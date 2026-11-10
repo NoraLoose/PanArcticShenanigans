@@ -197,13 +197,23 @@ end
 # ## Ocean and sea ice
 
 Δt      = config["time"]["dt_minutes"] * minutes
-closure = CATKEVerticalDiffusivity()
 time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)
+ocean_settings = get(config, "ocean", Dict())
+
+# Optional [ocean] horizontal_biharmonic_viscosity (m⁴/s): without it, momentum is dissipated only by the WENO
+# advection scheme. GLORYS12 uses 2e10 m⁴/s at 1/12° (Lellouche et al. 2018), about 9e10 at 15 km if scaled with Δx³.
+# Adding it changes the model type (one compilation); different values then reuse the compiled time step.
+biharmonic_viscosity = Float64(get(ocean_settings, "horizontal_biharmonic_viscosity", 0))
+closure = if biharmonic_viscosity > 0
+    @info "Horizontal biharmonic viscosity $(biharmonic_viscosity) m⁴/s"
+    (CATKEVerticalDiffusivity(), HorizontalScalarBiharmonicDiffusivity(ν = biharmonic_viscosity))
+else
+    CATKEVerticalDiffusivity()
+end
 
 # Optional [ocean] bottom_drag_coefficient (NumericalEarth's default is 0.003) and bottom_drag_background_velocity
 # (m/s, added in quadrature to the resolved speed; default 0). NEMO's defaults are 0.001 and 0.05 (rn_Cd0 = 1e-3,
 # rn_ke0 = 2.5e-3 m² s⁻²).
-ocean_settings = get(config, "ocean", Dict())
 drag_kw = (; (Symbol(k) => Float64(ocean_settings[k])
               for k in ("bottom_drag_coefficient", "bottom_drag_background_velocity") if haskey(ocean_settings, k))...)
 isempty(drag_kw) || @info "Bottom drag settings: $drag_kw"
