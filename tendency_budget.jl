@@ -390,6 +390,6 @@ tendency_hours = filter(h -> h ≤ config["time"]["stop_hours"],
 # Budget times rounded to whole steps, so that SpecifiedTimes does not shorten a step to reach them. The closure callback
 # is added first: when a budget time falls one step after another, the closure must read the earlier dη/dt first.
 tendency_times = sort(unique(round.(tendency_hours .* hours ./ Δt) .* Δt))
-add_callback!(simulation, tendency_closure, SpecifiedTimes((start_time .+ tendency_times .+ Δt)...))
-add_callback!(simulation, tendency_budget,  SpecifiedTimes((start_time .+ tendency_times)...))
+add_run_callback!(tendency_closure, SpecifiedTimes((start_time .+ tendency_times .+ Δt)...), :panarctic_tendency_closure)
+add_run_callback!(tendency_budget,  SpecifiedTimes((start_time .+ tendency_times)...), :panarctic_tendency_budget)
 @info "Momentum budget by depth class at hours $(tendency_times ./ hours): $tendency_file"

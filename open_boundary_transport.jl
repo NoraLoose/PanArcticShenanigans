@@ -140,13 +140,27 @@ end
 
 # ## 3. Hourly transport monitor
 
-monitor_file = joinpath(output_dir, "transport_monitor.csv")
-open(monitor_file, "w") do io
-    println(io, "hour,atlantic_model_Sv,atlantic_glorys_Sv,pacific_model_Sv,pacific_glorys_Sv,net_model_Sv,",
-                "net_glorys_Sv,target_total_Sv,glorys_volume_rate_Sv,surface_freshwater_Sv,eta_mean_m,glorys_eta_mean_m,",
-                "budget_residual_Sv,atlantic_native_Sv,pacific_native_Sv,nudge_Sv")
+# Started by run_outputs.jl for each run (a new file in output_dir), so rerun.jl can begin again in a new folder
+function start_transport_monitor()
+    file = joinpath(output_dir, "transport_monitor.csv")
+    open(file, "w") do io
+        println(io, "hour,atlantic_model_Sv,atlantic_glorys_Sv,pacific_model_Sv,pacific_glorys_Sv,net_model_Sv,",
+                    "net_glorys_Sv,target_total_Sv,glorys_volume_rate_Sv,surface_freshwater_Sv,eta_mean_m,glorys_eta_mean_m,",
+                    "budget_residual_Sv,atlantic_native_Sv,pacific_native_Sv,nudge_Sv")
+    end
+    return file
 end
 previous_monitor = Ref((t = NaN, η = NaN))
+
+# The running state the constrained edges and the monitor keep (mean η at the start, its change since, the surface
+# freshwater flux), cleared before each run
+function reset_transport_state!()
+    model_mean_η₀[] = NaN
+    fill!(model_Δη, 0)
+    fill!(surface_freshwater, 0)
+    previous_monitor[] = (t = NaN, η = NaN)
+    return nothing
+end
 
 function transport_monitor(sim)
     model = ocean_model_of(sim)

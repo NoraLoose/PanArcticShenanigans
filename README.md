@@ -33,6 +33,28 @@ The first run is slow: it downloads the data and fills gaps in GLORYS (cached af
 
 Output (`arctic_*.jld2`) is written to `output_dir`.
 
+### Timing
+
+The log reports how long each set-up phase takes (grid and bathymetry, GLORYS data, open-boundary transports, model
+construction, initial state, monitors), then, inside `run!`, the initialization, the first time step (where the time
+step is compiled when the model type is new in the Julia session) and the seconds per model hour of the later steps.
+A summary table is printed when the run ends.
+
+### Running again in the same session (ocean only)
+
+Building the model and compiling its first time step can take 15 minutes or more. For ocean-only runs
+(`[initialization] ocean_only = true`, or a rest test), `rerun.jl` starts again from the same initial state in the
+same Julia session, without loading data, balancing or compiling:
+
+```julia
+julia> empty!(ARGS); push!(ARGS, "first_run.toml"); include("panarctic.jl")   # builds the model, runs, keeps the initial state
+julia> empty!(ARGS); push!(ARGS, "second_run.toml"); include("rerun.jl")      # same model, new output_dir, from the start again
+```
+
+The second config may change `[paths]` (each run needs its own `output_dir`), `stop_hours` (up to the last GLORYS day
+the first run loaded) and `[diagnostics]`. Anything else is part of the model or its initial state; `rerun.jl` stops
+with a message if it differs, and a fresh session is needed. A run stopped with Ctrl-C can be rerun the same way.
+
 ## Figures and movies
 
 Plotting is separate from the model run. There is one script per figure or movie; each takes the same config file as `panarctic.jl` and writes to `output_dir`:

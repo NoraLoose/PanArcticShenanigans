@@ -2,7 +2,11 @@
 # Settings are read from a TOML file: `julia +1.13 --project=. panarctic.jl [config.toml]`. See README.
 # Figures and movies: scripts in plotting/ (one per figure).
 
+# Wall-clock time of each phase; rerun.jl runs again from the same initial state without rebuilding (see README)
+include("timing.jl")
+
 include("setup.jl")
+finish_phase!("setup: config, grid and bathymetry")
 
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ, intrinsic_vector
@@ -73,6 +77,7 @@ for n in eachindex(uᵉˣᵗ.times)
     set!(vᶠ[n], compute!(Field(@at((Center, Face, Center), vᵉˣᵗ[n]))))
 end
 @info "Rotated GLORYS velocities into the grid frame and interpolated them to faces"
+finish_phase!("GLORYS boundary data: load, rotate, interpolate")
 
 # ## Rest-state test (optional): [initialization] rest = "uniform", "homogeneous" or "glorys"
 #
@@ -166,6 +171,7 @@ V_obcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
 # GLORYS's net transport per edge, the hybrid condition (replaces V_obcs when barotropic = "hybrid"), and the hourly
 # transport monitor
 include("open_boundary_transport.jl")
+finish_phase!("open-boundary transports (GLORYS on its own grid)")
 
 # ## Sponge (optional, off by default)
 #
@@ -219,6 +225,7 @@ ocean = ocean_simulation(grid; drag_kw...,
 # h to hundreds of metres in nearly ice-free cells (#29).
 sea_ice = sea_ice_simulation(grid, ocean; clock = Clock(time = start_time),
                              advection = IncrementalRemapping(), timestepper = :ForwardEuler)
+finish_phase!("ocean and sea-ice models")
 
 # ## Initial conditions: GLORYS (ocean and sea ice)
 
@@ -271,6 +278,7 @@ haskey(config, "initialization") && include("balanced_initialization.jl")
 
 # Barotropic vorticity tendency of the initial state ([diagnostics] initial_vorticity = true, or "only" to stop here)
 get(get(config, "diagnostics", Dict()), "initial_vorticity", false) != false && include("initial_vorticity.jl")
+finish_phase!("initial state: GLORYS, stability check, balance")
 
 # ## Atmosphere and coupled model
 
@@ -333,62 +341,25 @@ else
     Simulation(coupled_model; Δt, stop_time)
 end
 
-wall_time = Ref(time_ns())
+finish_phase!("atmosphere and simulation")
 
-function progress(sim)
-    model = ocean_model_of(sim)
-    T = model.tracers.T
-    S = model.tracers.S
-    u, v, w = model.velocities
-    η = model.free_surface.displacement
-    ice = ocean_only ? "" : @sprintf(" max(h): %.2f m,", maximum(sim.model.sea_ice.model.ice_thickness))
-    msg = @sprintf("time: %s, iter: %d, extrema(T, S): (%.1f, %.1f) °C (%.1f, %.1f) psu, extrema(u) (%.2e, %.2e, %.2e) max|η|: %.3f m,%s wall: %s",
-                   prettytime(sim), iteration(sim),
-                   extrema(T)..., extrema(S)..., maximum(abs, u), maximum(abs, v), maximum(abs, w), maximum(abs, η), ice,
-                   prettytime(1e-9 * (time_ns() - wall_time[])))
-    @info msg
-    wall_time[] = time_ns()
-    return nothing
+# Progress, timing, transport and section monitors, budgets and output writers (also used by rerun.jl)
+include("run_outputs.jl")
+finish_phase!("monitors and output writers")
+
+# A host copy of the initial state (ocean only), so that rerun.jl can start again from it in this session.
+# prognostic_state copies fields to the host; it returns the clock itself (written to file when checkpointing), so the
+# clock is copied here. On a CPU the host copy would share memory with the model, hence the deepcopy.
+if ocean_only
+    initial_state = Oceananigans.prognostic_state(ocean.model)
+    arch isa CPU && (initial_state = deepcopy(initial_state))
+    let clock = ocean.model.clock
+        global initial_state = merge(initial_state, (; clock = (; clock.time, clock.iteration, clock.last_Δt,
+                                                                   clock.last_stage_Δt, clock.stage)))
+    end
+    finish_phase!("copy of the initial state for rerun.jl")
 end
 
-add_callback!(simulation, progress, TimeInterval(1hours))
-
-function ice_progress(sim)
-    uᵢ, vᵢ = sim.model.sea_ice.model.velocities
-    @info @sprintf("    ice: max |u| = %.2f m/s, max |v| = %.2f m/s", maximum(abs, uᵢ), maximum(abs, vᵢ))
-    return nothing
-end
-ocean_only || add_callback!(simulation, ice_progress, TimeInterval(1hours))
-add_callback!(simulation, transport_monitor, TimeInterval(1hours))
-add_callback!(simulation, update_surface_freshwater!, IterationInterval(1))
-
-# Gateway transports (Greenland–Scotland passages, Svinøy, Lofoten slope, Barents Sea Opening, Fram, Davis and Bering
-# Straits), daily means near the Atlantic edge and of the barotropic flow
-get(get(config, "diagnostics", Dict()), "sections", false) && include("section_monitor.jl")
-
-# Depth-integrated momentum budget by depth class: which term moves water onto or off the shelves
-get(get(config, "diagnostics", Dict()), "tendencies", false) && include("tendency_budget.jl")
-
-# ## Output: hourly fields near the surface
-
-u, v, w = ocean.model.velocities
-h = sea_ice.model.ice_thickness
-ℵ = sea_ice.model.ice_concentration
-𝒱 = @at((Center, Center, Center), sqrt(u^2 + v^2))
-he = h * ℵ
-ocean_outputs = merge(ocean.model.tracers, (; 𝒱))
-
-sea_ice_outputs = (; he, uᵢ = sea_ice.model.velocities.u, vᵢ = sea_ice.model.velocities.v)
-
-ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
-                                            filename = ocean_surface_file,
-                                            indices = (:, :, grid.Nz-2),
-                                            schedule = TimeInterval(1hours),
-                                            overwrite_files = true)
-
-sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
-                                              filename = sea_ice_surface_file,
-                                              schedule = TimeInterval(1hours),
-                                              overwrite_files = true)
-
+start_run_timing!()
 run!(simulation)
+report_run_timing(simulation)

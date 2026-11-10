@@ -187,18 +187,18 @@ function section_monitor(sim)
 end
 
 # Callbacks also run at iteration 0: the model starts from GLORYS, so the first row should nearly agree
-add_callback!(simulation, section_monitor, TimeInterval(1hours))
+add_run_callback!(section_monitor, TimeInterval(1hours), :panarctic_section_monitor)
 @info "Section monitor: $section_file"
 
 # ## Daily means near the Atlantic edge, and GLORYS on the same rows
 
 edge_rows_daily = 1:get(diagnostics, "edge_section_rows", 8)
-ocean.output_writers[:atlantic_edge] = JLD2Writer(ocean.model, (; T = ocean.model.tracers.T, S = ocean.model.tracers.S,
-                                                                  v = ocean.model.velocities.v);
-                                                  filename = joinpath(output_dir, "atlantic_edge_daily.jld2"),
-                                                  indices = (:, edge_rows_daily, :),
-                                                  schedule = AveragedTimeInterval(1days),
-                                                  overwrite_files = true)
+add_run_writer!(:atlantic_edge, JLD2Writer(ocean.model, (; T = ocean.model.tracers.T, S = ocean.model.tracers.S,
+                                                             v = ocean.model.velocities.v);
+                                           filename = joinpath(output_dir, "atlantic_edge_daily.jld2"),
+                                           indices = (:, edge_rows_daily, :),
+                                           schedule = AveragedTimeInterval(1days),
+                                           overwrite_files = true))
 
 Oceananigans.OutputWriters.jldopen(joinpath(output_dir, "atlantic_edge_glorys.jld2"), "w") do file
     file["times"] = collect(vᶠ.times)          # seconds from 00:00 on dates[1]; the model's clock counts the same way
@@ -213,17 +213,17 @@ end
 
 U_daily = Field(Integral(ocean.model.velocities.u, dims = 3))
 V_daily = Field(Integral(ocean.model.velocities.v, dims = 3))
-ocean.output_writers[:barotropic] = JLD2Writer(ocean.model, (; U = U_daily, V = V_daily,
-                                                               η = ocean.model.free_surface.displacement);
-                                               filename = joinpath(output_dir, "barotropic_daily.jld2"),
-                                               schedule = AveragedTimeInterval(1days),
-                                               overwrite_files = true)
+add_run_writer!(:barotropic, JLD2Writer(ocean.model, (; U = U_daily, V = V_daily,
+                                                          η = ocean.model.free_surface.displacement);
+                                        filename = joinpath(output_dir, "barotropic_daily.jld2"),
+                                        schedule = AveragedTimeInterval(1days),
+                                        overwrite_files = true))
 @info "Daily means: atlantic_edge_daily.jld2 (rows $(edge_rows_daily)), barotropic_daily.jld2"
 
 # ## Hourly free surface (whole domain), to follow how η changes during the first days (plotting/eta_hourly.jl)
 
-ocean.output_writers[:free_surface_hourly] = JLD2Writer(ocean.model, (; η = ocean.model.free_surface.displacement);
-                                                        filename = joinpath(output_dir, "free_surface_hourly.jld2"),
-                                                        schedule = TimeInterval(1hours),
-                                                        overwrite_files = true)
+add_run_writer!(:free_surface_hourly, JLD2Writer(ocean.model, (; η = ocean.model.free_surface.displacement);
+                                                 filename = joinpath(output_dir, "free_surface_hourly.jld2"),
+                                                 schedule = TimeInterval(1hours),
+                                                 overwrite_files = true))
 @info "Hourly free surface: free_surface_hourly.jld2"
