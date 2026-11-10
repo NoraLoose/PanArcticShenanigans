@@ -212,6 +212,34 @@ else
                 common_mean(model_δ, wet), common_mean(model_δ, classes.shelf),
                 common_mean(model_δ, classes.slope), common_mean(model_δ, classes.deep))
     end
+
+    # The same comparison by region, with each one's domain mean removed (so a volume error drops out and what is left
+    # is where the water went): the shelf regions above and the three basin regions of the see-saw table. GLORYS's daily
+    # means average over any oscillation shorter than a day, so they are compared with the model's 24-hour mean
+    # centred on the same hour where the run covers it (the instantaneous model value is shown too).
+    function model_day_mean(k)
+        hs = [h for h in 24k-12:24k+12 if 0 ≤ h ≤ hours_all[end] + 0.01]
+        length(hs) < 25 && return nothing
+        return sum(full_change(record_at(h)) for h in hs) ./ length(hs)
+    end
+    relative(a) = a .- common_mean(a, wet) / 100
+    comparison_regions = vcat([(name, classes.shelf .& (shelf_region .== name)) for name in region_names if name != "other"],
+                              [(String(name), let m = falses(Nx, Ny); m[r[1], r[2]] .= true; m .& wet .& .!classes.shelf end)
+                               for (name, r) in pairs(regions)])
+    for k in glorys_days
+        k == 0 && continue
+        glorys_δ = relative(glorys_zos(dates[start_index + k]) .- zos₀)
+        model_δ  = relative(full_change(record_at(24k)))
+        day_mean = model_day_mean(k)
+        model_δ̄  = isnothing(day_mean) ? nothing : relative(day_mean)
+        println("\nHour $(24k), by region, each domain mean removed (cm): GLORYS daily mean | model at hour $(24k)",
+                isnothing(model_δ̄) ? "" : " | model 24-h mean around it")
+        for (name, mask) in comparison_regions
+            @printf("   %-26s %8.2f | %8.2f", name, common_mean(glorys_δ, mask), common_mean(model_δ, mask))
+            isnothing(model_δ̄) || @printf(" | %8.2f", common_mean(model_δ̄, mask))
+            println()
+        end
+    end
 end
 
 fig_ts = Figure(size = (1000, 450), fontsize = 14)
