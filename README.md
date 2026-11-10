@@ -35,6 +35,21 @@ Model output is written to `output_dir` (default `output/`, relative to where yo
 
 To continue a run from its latest checkpoint, set `restart = true` and run again with the same config. The run still ends at `end_date`.
 
+## Transports
+
+Volume, heat, salt and freshwater transports through Fram Strait, the Barents Sea Opening, Bering Strait and Davis Strait (Sv, TW, kg/s, Sv; positive into the Arctic), and through the two open boundaries (`atlantic_boundary`, `pacific_boundary`; positive into the domain). The sections are defined in `[transports]` in the config as longitude/latitude waypoints, so they don't depend on the grid: the faces they cross are found on whatever grid the run uses. Both ends of a section should be on land; a warning says when one isn't. Heat and freshwater are relative to `reference_temperature` and `reference_salinity`.
+
+- **Online** (`online = true`, the default): computed every time step and averaged like the rest of the output, written to `arctic_transports.jld2` in `output_dir`. These include the covariance of velocity and T, S within each average.
+- **Offline**, from the time-averaged output of a run, on the CPU:
+
+  ```bash
+  julia +1.13 --project=. analysis/transports.jl [config.toml]   # arctic_transports_offline.jld2
+  ```
+
+  Uses the grid saved with the output. Being computed from averaged u, v, T, S, these miss the covariance within each average.
+
+To check the sections on the grid (e.g. after changing the grid or a section), plot their faces on the bathymetry with `plotting/transport_sections.jl`.
+
 ## Figures and movies
 
 Plotting is separate from the model run. There is one script per figure or movie; each takes the same config file as `panarctic.jl` and writes to `figure_dir` (default `figures/`), separate from the model output:
@@ -44,6 +59,7 @@ julia +1.13 --project=. plotting/bathymetry.jl          [config.toml]   # bathym
 julia +1.13 --project=. plotting/grid_spacing.jl        [config.toml]   # grid_spacing.png
 julia +1.13 --project=. plotting/glorys_free_surface.jl [config.toml]   # arctic_free_surface.mp4 (GLORYS boundary data)
 julia +1.13 --project=. plotting/surface_movie.jl       [config.toml]   # arctic_sea.mp4 (SST, SSS, surface speed, ice volume) from the time-averaged output
+julia +1.13 --project=. plotting/transport_sections.jl  [config.toml]   # transport_sections.png, transport_section_faces.png (the transport sections on the bathymetry)
 ```
 
-`surface_movie.jl` only reads the output files and doesn't need a GPU. The other three build the grid (and `glorys_free_surface.jl` reads the GLORYS data), so run them where `panarctic.jl` runs.
+`surface_movie.jl` only reads the output files and doesn't need a GPU. The others build the grid (and `glorys_free_surface.jl` reads the GLORYS data), so run them where `panarctic.jl` runs.

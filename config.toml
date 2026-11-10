@@ -26,6 +26,21 @@ average_hours   = 24      # time-averaged output (3D ocean, free surface, sea ic
 checkpoint_days = 30      # how often the full model state is saved for restarts
 restart         = false   # true: continue from the latest checkpoint in output_dir
 
+[transports]
+# Volume, heat, salt and freshwater transports through the sections below and the open boundaries (see transports.jl).
+online                = true   # true: computed every time step and averaged over average_hours, written to arctic_transports.jld2
+reference_temperature = 0      # heat transport relative to this temperature (°C)
+reference_salinity    = 34.8   # freshwater transport relative to this salinity (g/kg)
+
+# Each section is a great-circle path through (longitude, latitude) waypoints. Positive transport flows to the right,
+# walking from the first waypoint to the last; these are ordered so that positive is into the Arctic. Both ends should
+# be on land, so the section spans the whole strait on any grid. Check with plotting/transport_sections.jl.
+[transports.sections]
+fram_strait         = { lon = [15.0, -20.0],    lat = [79.0, 79.0] }
+barents_sea_opening = { lon = [26.5, 15.5],     lat = [69.5, 77.9] }
+bering_strait       = { lon = [-166.0, -171.0], lat = [66.0, 66.0] }
+davis_strait        = { lon = [-53.0, -63.0],   lat = [67.0, 66.5] }
+
 [paths]
 data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
 output_dir = "output"    # model output: time averages (.jld2) and checkpoints
