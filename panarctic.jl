@@ -292,13 +292,25 @@ if !ocean_only
     # Test of the initial adjustment: with `winds = false` in [atmosphere], the JRA55 winds are set to zero (heat and
     # freshwater fluxes still use the other JRA55 fields, with no wind in the bulk formulae). The whole record is held in
     # memory so that nothing is reloaded from file.
-    if !get(config["atmosphere"], "winds", true)
+    #
+    # With `pressure = false`, the sea-level pressure is set to 101325 Pa everywhere. NumericalEarth applies it to the ocean
+    # as −∇(p/ρ₀) on every level (an inverse-barometer response of about −1 cm per hPa), so `winds = false` alone still
+    # forces the ocean with the January 1993 pressure systems.
+    no_winds    = !get(config["atmosphere"], "winds", true)
+    no_pressure = !get(config["atmosphere"], "pressure", true)
+    if no_winds || no_pressure
         atmosphere = JRA55PrescribedAtmosphere(arch; jra55..., dir_kw...,
                                                time_indices_in_memory = length(atmosphere.velocities.u.times))
+    end
+    if no_winds
         for u in atmosphere.velocities
             fill!(parent(u.data), 0)
         end
         @warn "JRA55 winds set to zero ([atmosphere] winds = false)"
+    end
+    if no_pressure
+        fill!(parent(atmosphere.pressure.data), 101325)
+        @warn "JRA55 sea-level pressure set to 101325 Pa everywhere ([atmosphere] pressure = false)"
     end
     radiation     = JRA55PrescribedRadiation(arch; jra55..., dir_kw...)
     land          = JRA55PrescribedLand(grid; jra55..., dir_kw...)
