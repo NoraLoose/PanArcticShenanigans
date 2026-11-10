@@ -94,7 +94,21 @@ tendency_regions = let cgrid = on_architecture(CPU(), grid)
     (shelf = inside .& (0 .< H .< 200), slope = inside .& (200 .≤ H .< 1000), deep = inside .& (H .≥ 1000))
 end
 
-top_flux(field) = (c = field.boundary_conditions.top.condition; c isa Oceananigans.Fields.AbstractField ? Array(interior(c))[:, :, 1] : nothing)
+# The surface momentum flux J. NumericalEarth's coupled ocean uses an IMEX condition, J = Jₑ + λ u_top, with the
+# ice–ocean (and air–ocean) stress split into an explicit flux Jₑ and an implicit coefficient λ; reading only a plain
+# Field (as before) gave zero surface stress in coupled runs.
+function top_flux(field, top_values)
+    c = field.boundary_conditions.top.condition
+    c isa Oceananigans.Fields.AbstractField && return Array(interior(c))[:, :, 1]
+    if c isa Oceananigans.BoundaryConditions.IMEXFlux
+        Jₑ, λ = c.explicit_flux, c.implicit_coefficient
+        if Jₑ isa Oceananigans.Fields.AbstractField && λ isa Oceananigans.Fields.AbstractField
+            return Array(interior(Jₑ))[:, :, 1] .+ Array(interior(λ))[:, :, 1] .* top_values
+        end
+        @warn "Surface momentum flux of an unexpected form ($(typeof(Jₑ)), $(typeof(λ))); surface stress left out" maxlog = 1
+    end
+    return nothing
+end
 
 function tendency_budget(sim)
     model = ocean_model_of(sim)
@@ -110,7 +124,8 @@ function tendency_budget(sim)
     coriolis  = model.coriolis
     g     = model.free_surface.gravitational_acceleration
     Nzc   = size(cgrid, 3)
-    τx, τy = top_flux(model.velocities.u), top_flux(model.velocities.v)
+    τx = top_flux(model.velocities.u, Array(interior(u))[:, :, size(cgrid, 3)])
+    τy = top_flux(model.velocities.v, Array(interior(v))[:, :, size(cgrid, 3)])
     Cd, ubg = tendency_drag.Cd, tendency_drag.ubg
 
     Gx = Dict(t => zeros(Nx + 1, Ny) for t in tendency_terms)

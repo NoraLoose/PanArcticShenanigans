@@ -87,8 +87,12 @@ end
 rest_state = get(get(config, "initialization", Dict()), "rest", "none")
 rest_state in ("none", "uniform", "homogeneous", "glorys") ||
     error("[initialization] rest must be \"uniform\", \"homogeneous\" or \"glorys\" (or absent)")
-ocean_only = rest_state != "none"
-if ocean_only
+rest_test  = rest_state != "none"
+# [initialization] ocean_only = true runs the ocean alone (no atmosphere, no sea-ice coupling) without a rest test:
+# GLORYS initial and boundary data as usual, but no surface stress, heat or freshwater fluxes
+ocean_only = rest_test || get(get(config, "initialization", Dict()), "ocean_only", false)
+ocean_only && !rest_test && @warn "Ocean only: no atmosphere and no sea-ice coupling ([initialization] ocean_only = true)"
+if rest_test
     get(config["initialization"], "balance", false) == false || error("[initialization] rest and balance cannot be combined")
     eta_offset == 0 || error("[initialization] rest and eta_offset cannot be combined; use rest_eta")
     rest_eta = Float64(get(config["initialization"], "rest_eta", 0.0))
