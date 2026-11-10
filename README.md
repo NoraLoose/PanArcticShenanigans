@@ -31,7 +31,7 @@ The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk 
 
 The first run is slow: it downloads the data and fills gaps in GLORYS (cached afterwards). Later runs start in a few minutes.
 
-Model output is written to `output_dir` (default `output/`, relative to where you run): daily means of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean_daily.jld2`, `arctic_sea_ice_daily.jld2`), and checkpoints of the full model state (`arctic_checkpoint*.jld2`). The averaging and checkpoint intervals are set in `[output]` in the config.
+Model output is written to `output_dir` (default `output/`, relative to where you run): time averages (daily by default) of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean.jld2`, `arctic_sea_ice.jld2`), and checkpoints of the full model state (`arctic_checkpoint*.jld2`). The averaging and checkpoint intervals are set in `[output]` in the config.
 
 To continue a run from its latest checkpoint, set `restart = true` and run again with the same config. The run still ends at `end_date`.
 
@@ -43,7 +43,7 @@ Plotting is separate from the model run. There is one script per figure or movie
 julia +1.13 --project=. plotting/bathymetry.jl          [config.toml]   # bathymetry.png
 julia +1.13 --project=. plotting/grid_spacing.jl        [config.toml]   # grid_spacing.png
 julia +1.13 --project=. plotting/glorys_free_surface.jl [config.toml]   # arctic_free_surface.mp4 (GLORYS boundary data)
-julia +1.13 --project=. plotting/surface_movie.jl       [config.toml]   # arctic_sea.mp4 (SST, SSS, surface speed, ice volume) from the daily means
+julia +1.13 --project=. plotting/surface_movie.jl       [config.toml]   # arctic_sea.mp4 (SST, SSS, surface speed, ice volume) from the time-averaged output
 ```
 
 `surface_movie.jl` only reads the output files and doesn't need a GPU. The other three build the grid (and `glorys_free_surface.jl` reads the GLORYS data), so run them where `panarctic.jl` runs.

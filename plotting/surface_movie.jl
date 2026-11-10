@@ -1,9 +1,10 @@
-# Movie of SST, SSS, surface speed and ice volume from the daily means written by panarctic.jl.
+# Movie of SST, SSS, surface speed and ice volume from the time-averaged output of panarctic.jl,
+# one frame per saved average (daily by default).
 #
 #   julia +1.13 --project=. plotting/surface_movie.jl [config.toml]
 #
-# Reads arctic_ocean_daily.jld2 and arctic_sea_ice_daily.jld2 from `output_dir` and writes arctic_sea.mp4
-# to `figure_dir`. Runs on the CPU and does not need the grid or input data. The 3D fields are read one day at a time.
+# Reads arctic_ocean.jld2 and arctic_sea_ice.jld2 from `output_dir` and writes arctic_sea.mp4
+# to `figure_dir`. Runs on the CPU and does not need the grid or input data. The 3D fields are read one frame at a time.
 
 include("../config.jl")
 
@@ -25,7 +26,7 @@ n     = Observable(1)
 surface(φ) = interior(φ, :, :, Nz)
 speed(n)   = interior(compute!(Field(@at((Center, Center, Center), sqrt(u[n]^2 + v[n]^2)), indices = (:, :, Nz))), :, :, 1)
 
-title = @lift "Arctic — day " * string(round(Int, (times[$n] - times[1]) / days) + 1)   # days since the start of the run
+title = @lift "Arctic — " * prettytime(times[$n] - times[1]) * " after the start"
 
 Tₙ = @lift surface(T[$n])
 Sₙ = @lift surface(S[$n])

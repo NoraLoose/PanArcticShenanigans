@@ -28,7 +28,7 @@ restart         = false   # true: continue from the latest checkpoint in output_
 
 [paths]
 data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
-output_dir = "output"    # model output: daily means (.jld2) and checkpoints
+output_dir = "output"    # model output: time averages (.jld2) and checkpoints
 figure_dir = "figures"   # figures and movies from the plotting/ scripts
 
 [boundaries]

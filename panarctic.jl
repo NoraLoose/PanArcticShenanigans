@@ -253,7 +253,7 @@ function ice_progress(sim)
 end
 add_callback!(simulation, ice_progress, TimeInterval(1hours))
 
-# ## Output: daily means and checkpoints
+# ## Output: time averages and checkpoints
 #
 # Averages over `average_hours` (daily by default) of the 3D ocean state, the free surface and the sea ice,
 # in single precision. Checkpoints of the full model state every `checkpoint_days`, for restarts.
