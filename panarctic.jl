@@ -4,6 +4,10 @@
 
 include("setup.jl")
 
+# Keep the config of this run with its output (replacing that of an earlier run of the same experiment)
+isfile(run_config_file) && samefile(config_file, run_config_file) || cp(config_file, run_config_file; force = true)
+@info "Experiment \"$experiment\": output in $output_dir, config copied to $run_config_file"
+
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir, GravityWaveRadiationBoundaryCondition, NormalFlowBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ, intrinsic_vector
 using Oceananigans.BoundaryConditions: fill_halo_regions!
