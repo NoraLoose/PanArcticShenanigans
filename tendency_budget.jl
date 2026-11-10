@@ -80,6 +80,7 @@ open(closure_file, "w") do io
 end
 predicted_acceleration = Dict{Symbol, Float64}()
 rate_before_step       = Dict{Symbol, Float64}()
+last_budget_time       = Ref(NaN)
 
 let ocean_settings = get(config, "ocean", Dict())
     global tendency_drag = (Cd  = Float64(get(ocean_settings, "bottom_drag_coefficient", 0.003)),
@@ -222,6 +223,7 @@ function tendency_budget(sim)
             @printf("%-7s %9.3f %10.3f %9.3f %11.3f %11.3f %9.3f %9.3f %9.3f\n", name, rate, terms..., sum(terms))
             predicted_acceleration[name] = sum(terms)
             rate_before_step[name] = rate
+            last_budget_time[] = model.clock.time
             println(io, join((@sprintf("%.3f", hour), name, @sprintf("%.5f", rate),
                               (@sprintf("%.5f", x) for x in terms)..., @sprintf("%.5f", sum(terms))), ","))
         end
@@ -256,6 +258,8 @@ end
 # One step later: the measured change of each region's dη/dt, against the sum predicted at the budget time
 function tendency_closure(sim)
     model = ocean_model_of(sim)
+    # Oceananigans calls every callback once at start-up whatever its schedule: act only one step after a budget
+    isapprox(model.clock.time, last_budget_time[] + Δt; atol = 1) || return nothing
     hour  = (model.clock.time - start_time) / 3600
     cgrid = on_architecture(CPU(), model.grid)
     u     = on_architecture(CPU(), model.velocities.u)
