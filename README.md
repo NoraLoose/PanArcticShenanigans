@@ -27,9 +27,11 @@ cp config.toml config_myname.toml   # edit as needed
 julia +1.13 --project=. panarctic.jl config_myname.toml
 ```
 
-The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk with space. For a quick check, set `end_date = 1993-01-01T15:00` (3 hours).
+The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk with space. For a quick check, set `end_date = 1993-01-01T03:00` (3 hours).
 
 The first run is slow: it downloads the data and fills gaps in GLORYS (cached afterwards). Later runs start in a few minutes.
+
+The ocean and sea ice are nested in GLORYS with NumericalEarth's `nested_ocean_simulation` and `nested_sea_ice_simulation` ([NumericalEarth.jl#676](https://github.com/NumericalEarth/NumericalEarth.jl/pull/676), not yet released; `Project.toml` pins its branch). They read GLORYS along the open Atlantic and Pacific edges, set the open boundary conditions, and start the run from GLORYS on `start_date`.
 
 Model output is written to `output_dir` (default `output/`, relative to where you run): time averages (daily by default) of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean.jld2`, `arctic_sea_ice.jld2`), and checkpoints of the full model state (`arctic_checkpoint*.jld2`). The averaging and checkpoint intervals are set in `[output]` in the config.
 
