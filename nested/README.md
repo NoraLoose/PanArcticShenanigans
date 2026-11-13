@@ -19,6 +19,9 @@ julia +1.13 --project=. panarctic_nested.jl                 # settings in config
 julia +1.13 --project=. panarctic_nested.jl my_config.toml  # or your own copy
 ```
 
+Each run we make has its own settings file in `runs/` (start from `config.toml`, which keeps the defaults), so that
+`config.toml` is never edited and a run can be repeated from its file: `panarctic_nested.jl runs/<name>.toml`.
+
 The default is a quick check: 100 km (≈1°), ocean only, 4 days; under half an hour on an A100 once the
 data are downloaded. For the production grid set `spacing_km = 15` and `dt_minutes = 10`. Credentials for GLORYS are the same
 environment variables as for `panarctic.jl` (see the main README).
