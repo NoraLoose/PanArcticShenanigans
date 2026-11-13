@@ -3,11 +3,11 @@
 #
 #     T = A dη̄ᴳ/dt − F + A [(η̄ᴳ − η̄ᴳ₀) − (η̄ − η̄₀)] / τ    (the first term only with `tendency = true`),
 #
-# with A the wet area, η̄ᴳ GLORYS's domain-mean η (daily means, interpolated in time), F the surface freshwater volume
-# flux into the ocean, η̄ the model's domain-mean η and the subscript 0 the start of the run. The first term follows
-# GLORYS's volume change, the second hands the surface freshwater back through the edges, and the third relaxes any
-# remaining drift over τ. GLORYS's daily means make dη̄ᴳ/dt jump once a day; without it, the relaxation alone follows
-# GLORYS, smoothly but about τ behind. Included by panarctic_nested.jl when `[boundaries] follow_glorys_volume = true`.
+# with A the wet area, η̄ᴳ GLORYS's domain-mean η (daily means, joined by a monotone cubic so that dη̄ᴳ/dt is
+# continuous), F the surface freshwater volume flux into the ocean, η̄ the model's domain-mean η and the subscript 0 the
+# start of the run. The first term follows GLORYS's volume change, the second hands the surface freshwater back through
+# the edges, and the third relaxes any remaining drift over τ. Without the first term the relaxation alone follows
+# GLORYS, about τ behind. Included by panarctic_nested.jl when `[boundaries] follow_glorys_volume = true`.
 
 using Oceananigans.Operators: Azᶜᶜᶜ
 using NumericalEarth.NestedModels: boundary_location, sample_parent!
@@ -19,6 +19,7 @@ struct GLORYSVolumeTarget{R, C, J, H, M}
     displacement :: H        # η
     times        :: Vector{Float64}   # times of GLORYS's daily means (s since the start of the run)
     means        :: Vector{Float64}   # GLORYS's domain-mean η at those times (m)
+    slopes       :: Vector{Float64}   # dη̄ᴳ/dt at those times (m s⁻¹)
     area         :: Float64
     relaxation_time :: Float64
     tendency        :: Bool
@@ -41,7 +42,7 @@ function GLORYSVolumeTarget(net_inflow, child, parent_η, relaxation_time, tende
     end
 
     target = GLORYSVolumeTarget(net_inflow, on_architecture(arch, area), child.forcing.η.parameters,
-                                child.free_surface.displacement, times, means, A, Float64(relaxation_time), tendency,
+                                child.free_surface.displacement, times, means, monotone_slopes(times, means), A, Float64(relaxation_time), tendency,
                                 Ref((0.0, 0.0)))
     target.initial_means[] = (model_mean(target), glorys_mean(target, child.clock.time)[1])
     return target
@@ -49,13 +50,27 @@ end
 
 model_mean(target) = sum(view(interior(target.displacement), :, :, 1) .* target.cell_area) / target.area
 
-# GLORYS's domain-mean η and its rate of change at time t, linear between the daily means and held before the first
+# Slopes at the daily means: the harmonic mean of the neighbouring secants, zero where they differ in sign
+# (Fritsch & Butland 1984), so the cubic between two means never overshoots them
+function monotone_slopes(times, means)
+    δ = diff(means) ./ diff(times)
+    inner = [δ[n - 1] * δ[n] > 0 ? 2 / (1 / δ[n - 1] + 1 / δ[n]) : 0.0 for n in 2:length(δ)]
+    return [δ[1]; inner; δ[end]]
+end
+
+# GLORYS's domain-mean η and its rate of change at time t: the cubic Hermite interpolant through the daily means and
+# their slopes, held before the first
 function glorys_mean(target, t)
-    times, means = target.times, target.means
+    times, means, slopes = target.times, target.means, target.slopes
     t ≤ times[1] && return means[1], 0.0
     n = min(searchsortedlast(times, t), length(times) - 1)
-    slope = (means[n + 1] - means[n]) / (times[n + 1] - times[n])
-    return means[n] + slope * (t - times[n]), slope
+    h = times[n + 1] - times[n]
+    s = (t - times[n]) / h
+    η̄ᴳ = (2s^3 - 3s^2 + 1) * means[n] + (s^3 - 2s^2 + s) * h * slopes[n] +
+          (3s^2 - 2s^3) * means[n + 1] + (s^3 - s^2) * h * slopes[n + 1]
+    ∂tη̄ᴳ = ((6s^2 - 6s) * means[n] + (6s - 6s^2) * means[n + 1]) / h +
+            (3s^2 - 4s + 1) * slopes[n] + (3s^2 - 2s) * slopes[n + 1]
+    return η̄ᴳ, ∂tη̄ᴳ
 end
 
 function set_net_inflow!(sim, target)
