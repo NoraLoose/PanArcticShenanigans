@@ -38,7 +38,7 @@ end
 # change in domain-mean η, and the residual (the change in mean η minus both), which should be zero.
 # Written to <output_dir>/nested_monitor.csv.
 function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInterval(1hours),
-                             exchanger = nothing, parent_η = nothing)
+                             exchanger = nothing, parent_η = nothing, depth_exponent = 0)
     Nx, Ny, Nz = size(child.grid)
     bottom = Array(interior(bottom_height_field(child.grid)))[:, :, 1]   # in 0.117 the immersed boundary holds a bare array
     wet    = bottom .< 0
@@ -58,6 +58,7 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
     file = joinpath(output_dir, "nested_monitor.csv")
     open(io -> println(io, "hour,atlantic_in_Sv,pacific_in_Sv,net_in_Sv,eta_mean_cm,shelf_change_cm,deep_change_cm,max_u,max_v,",
                        "atlantic_eta_offset_cm,pacific_eta_offset_cm,parent_eta_mean_cm,",
+                       "atlantic_flather_eta_Sv,pacific_flather_eta_Sv,pin_correction_Sv,pin_max_velocity,",
                        "edge_volume_cm,surface_volume_cm,budget_residual_cm,edge_inflow_from_volume_Sv,",
                        "fastest_component,fastest_i,fastest_j,fastest_k,fastest_longitude,fastest_latitude,fastest_z"), file, "w")
 
@@ -94,6 +95,18 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
         δη = [η[i, j] - band_value(band, i, j, 1, Time(t)) for i in cells]
         return sum(δη .* Δx) / sum(Δx)
     end
+    # Flather's η term through an edge, Σ √(gH) (ηᴳ − η) Δx, positive into the domain (Sv)
+    function flather_eta_inflow(η, band, j, t, g)
+        isnothing(band) && return NaN
+        return sum(sqrt(9.81 * -bottom[i, j]) * (band_value(band, i, j, 1, Time(t)) - η[i, j]) * Δxᶜᶜᶜ(i, j, 1, g)
+                   for i in 1:Nx if wet[i, j]) / 1e6
+    end
+
+    # Largest velocity the pin adds on an edge face when it moves δQ (Sv): |δQ| Hᵖ / (H Σ Hᵖ Δx) over both edges
+    edge_depths = [(-bottom[i, j], Δxᶜᶜᶜ(i, j, 1, cpu_grid)) for j in (1, Ny) for i in 1:Nx if wet[i, j]]
+    pin_weight  = sum(H^depth_exponent * Δx for (H, Δx) in edge_depths)
+    pin_velocity(δQ) = 1e6 * abs(δQ) * maximum(H^(depth_exponent - 1) for (H, _) in edge_depths) / pin_weight
+
     side_band(side) = isnothing(exchanger) ? nothing : on_architecture(CPU(), exchanger.bands[side].η)
     ηᵖ = isnothing(parent_η) ? nothing : Field{Center, Center, Nothing}(child.grid)
 
@@ -130,6 +143,9 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
         t = time(sim)
         atlantic_offset = 100 * edge_offset(η, side_band(:south), 1, t, v.grid)
         pacific_offset  = 100 * edge_offset(η, side_band(:north), Ny, t, v.grid)
+        atlantic_flather = flather_eta_inflow(η, side_band(:south), 1, t, v.grid)
+        pacific_flather  = flather_eta_inflow(η, side_band(:north), Ny, t, v.grid)
+        pin_correction   = -(atlantic_flather + pacific_flather)
         if isnothing(ηᵖ)
             η̄ᵖ = NaN
         else
@@ -139,12 +155,13 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
 
         @info @sprintf("         fastest: %s = %.2f m/s at (i, j, k) = (%d, %d, %d), %.1f°E %.1f°N, z = %.0f m",
                        component == 1 ? "u" : "v", max(umax, vmax), fastest[2:4]..., fastest[5:7]...)
-        @info @sprintf("%6.1f h  Atlantic in %+6.2f Sv, Pacific in %+6.2f Sv, net %+6.2f Sv; mean η %+7.2f cm (parent %+7.2f); edge η − parent: Atlantic %+5.2f, Pacific %+5.2f cm; Δη shelf %+6.2f, deep %+6.2f cm; volume: edges %+6.2f, surface %+6.2f, residual %+6.2f cm; max|u|, |v| %.2f, %.2f m/s; wall %s",
+        @info @sprintf("%6.1f h  Atlantic in %+6.2f Sv, Pacific in %+6.2f Sv, net %+6.2f Sv; mean η %+7.2f cm (parent %+7.2f); edge η − parent: Atlantic %+5.2f, Pacific %+5.2f cm; pin %+6.2f Sv (≤ %.3f m/s); Δη shelf %+6.2f, deep %+6.2f cm; volume: edges %+6.2f, surface %+6.2f, residual %+6.2f cm; max|u|, |v| %.2f, %.2f m/s; wall %s",
                        model_hour, atlantic, pacific, atlantic + pacific, η̄, η̄ᵖ, atlantic_offset, pacific_offset,
-                       shelf_δη, deep_δη, edge_cm, surface_cm, residual, umax, vmax, prettytime(1e-9 * (time_ns() - wall[])))
-        open(io -> @printf(io, "%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%.3f,%.3f,%.1f\n",
+                       pin_correction, pin_velocity(pin_correction), shelf_δη, deep_δη, edge_cm, surface_cm, residual, umax, vmax, prettytime(1e-9 * (time_ns() - wall[])))
+        open(io -> @printf(io, "%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%.3f,%.3f,%.1f\n",
                            model_hour, atlantic, pacific, atlantic + pacific, η̄, shelf_δη, deep_δη, umax, vmax,
-                           atlantic_offset, pacific_offset, η̄ᵖ, edge_cm, surface_cm, residual, from_volume, fastest...),
+                           atlantic_offset, pacific_offset, η̄ᵖ,
+                           atlantic_flather, pacific_flather, pin_correction, pin_velocity(pin_correction), edge_cm, surface_cm, residual, from_volume, fastest...),
              file, "a")
         wall[] = time_ns()
         return nothing
