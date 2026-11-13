@@ -26,6 +26,7 @@ using CopernicusMarine   # enables the GLORYS download extension
 using CUDA, Dates, Printf
 
 include("monitor.jl")
+include("gateways.jl")
 include("net_inflow_control.jl")
 include("glorys_volume_target.jl")
 
@@ -121,6 +122,7 @@ end
 parent_η = parent_free_surface(grid, parent_dataset, dates; dir_kw...)
 add_nested_monitor!(simulation, child, output_dir; exchanger = ocean.model.exchanger, parent_η,
                     depth_exponent = net_inflow_depth_exponent)
+add_gateway_monitor!(simulation, child, output_dir)
 net_inflow_control && add_net_inflow_control!(simulation, child, ocean.model.exchanger, output_dir)
 follow_glorys && add_glorys_volume_target!(simulation, net_inflow, child, parent_η,
                                            config["boundaries"]["volume_relaxation_days"] * Oceananigans.Units.day;
