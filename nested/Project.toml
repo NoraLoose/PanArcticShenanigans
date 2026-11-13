@@ -11,7 +11,7 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 [sources]
 # NumericalEarth PR #676 (nested_ocean_model) plus PR #923 (zero_net_inflow, edge_transports) plus net_inflow,
 # branch nl+fjp/net-inflow. Move to the #676 head once these are merged, and to a release once #676 is.
-NumericalEarth = {url = "https://github.com/NumericalEarth/NumericalEarth.jl", rev = "52fa5ffdf7555c2222091a148ff8103edc61c4d2"}
+NumericalEarth = {url = "https://github.com/NumericalEarth/NumericalEarth.jl", rev = "d3603a660ef220ff57b4657bc4eaf631ad821023"}
 # Oceananigans 0.117.2 plus the NetInflow target_transport (pins the total inflow through several open sides)
 Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "fjp/net-inflow-target"}
 

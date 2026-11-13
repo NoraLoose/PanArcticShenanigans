@@ -27,6 +27,7 @@ using CUDA, Dates, Printf
 
 include("monitor.jl")
 include("net_inflow_control.jl")
+include("glorys_volume_target.jl")
 
 arch       = config["architecture"] == "GPU" ? GPU() : CPU()
 data_dir   = config["paths"]["data_dir"]
@@ -85,7 +86,8 @@ net_inflow_control && !zero_net_inflow && error("[boundaries] net_inflow_control
 edge_inflow        = get(config["boundaries"], "edge_inflow_Sv", nothing)
 edge_targets       = isnothing(edge_inflow) ? nothing : (south = 1e6 * edge_inflow["atlantic"], north = 1e6 * edge_inflow["pacific"])
 total_inflow       = get(config["boundaries"], "net_inflow_Sv", nothing)
-net_inflow         = isnothing(total_inflow) ? nothing : 1e6 * total_inflow
+follow_glorys      = get(config["boundaries"], "follow_glorys_volume", false)
+net_inflow         = follow_glorys ? Ref(0.0) : isnothing(total_inflow) ? nothing : 1e6 * total_inflow
 @info "Open boundaries: zero_net_inflow = $zero_net_inflow, net_inflow = $net_inflow, edge_transports = $edge_targets (m³/s, into the domain)"
 coupled         = config["coupling"]["coupled"]
 
@@ -118,6 +120,8 @@ end
 parent_η = parent_free_surface(grid, parent_dataset, dates; dir_kw...)
 add_nested_monitor!(simulation, child, output_dir; exchanger = ocean.model.exchanger, parent_η)
 net_inflow_control && add_net_inflow_control!(simulation, child, ocean.model.exchanger, output_dir)
+follow_glorys && add_glorys_volume_target!(simulation, net_inflow, child, parent_η,
+                                           config["boundaries"]["volume_relaxation_days"] * Oceananigans.Units.day)
 
 surface = (; u = child.velocities.u, v = child.velocities.v, T = child.tracers.T, S = child.tracers.S)
 simulation.output_writers[:surface] = JLD2Writer(child, surface; indices = (:, :, Nz), schedule = TimeInterval(3hours),
