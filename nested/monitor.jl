@@ -2,6 +2,7 @@
 # changes, and the child's η against the parent's along each open edge. Included by panarctic_nested.jl.
 
 using Oceananigans.Architectures: on_architecture
+using Oceananigans.Grids: λnode, φnode, znode
 using Oceananigans.Operators: Δxᶜᶜᶜ, Δxᶜᶠᶜ, Δzᶜᶠᶜ, Azᶜᶜᶜ
 using Oceananigans.OutputReaders: Clamp
 using Oceananigans.Units: Time
@@ -49,10 +50,16 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
         return sum(a[mask] .* A[mask]) / sum(A[mask])
     end
 
+    # The seafloor depth (m, 0 on land), one row per j, for maps of the monitor's locations
+    open(joinpath(output_dir, "depth.csv"), "w") do io
+        foreach(j -> println(io, join(-min.(bottom[:, j], 0), ',')), 1:Ny)
+    end
+
     file = joinpath(output_dir, "nested_monitor.csv")
     open(io -> println(io, "hour,atlantic_in_Sv,pacific_in_Sv,net_in_Sv,eta_mean_cm,shelf_change_cm,deep_change_cm,max_u,max_v,",
                        "atlantic_eta_offset_cm,pacific_eta_offset_cm,parent_eta_mean_cm,",
-                       "edge_volume_cm,surface_volume_cm,budget_residual_cm,edge_inflow_from_volume_Sv"), file, "w")
+                       "edge_volume_cm,surface_volume_cm,budget_residual_cm,edge_inflow_from_volume_Sv,",
+                       "fastest_component,fastest_i,fastest_j,fastest_k,fastest_longitude,fastest_latitude,fastest_z"), file, "w")
 
     # Volume budget, accumulated every time step
     arch      = Oceananigans.Architectures.architecture(child.grid)
@@ -110,7 +117,14 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
         previous[] = (time = time(sim), η̄ = η̄, surface = surface_volume[])
         shelf_δη = 100 * area_mean(δη, shelf, v.grid)
         deep_δη  = 100 * area_mean(δη, deep, v.grid)
-        umax, vmax = maximum(abs, child.velocities.u), maximum(abs, child.velocities.v)
+        u = on_architecture(CPU(), child.velocities.u)
+        umax, iᵘ = findmax(abs, interior(u))
+        vmax, iᵛ = findmax(abs, interior(v))
+        # Where the faster component peaks: 1 = u (at x faces), 2 = v (at y faces)
+        component, (i, j, k), location = umax ≥ vmax ? (1, Tuple(iᵘ), (Face(), Center(), Center())) :
+                                                      (2, Tuple(iᵛ), (Center(), Face(), Center()))
+        fastest = (component, i, j, k, λnode(i, j, k, v.grid, location...), φnode(i, j, k, v.grid, location...),
+                   znode(i, j, k, v.grid, location...))
         model_hour = time(sim) / hours
 
         t = time(sim)
@@ -123,12 +137,15 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
             η̄ᵖ = 100 * area_mean(Array(interior(on_architecture(CPU(), ηᵖ)))[:, :, 1], wet, v.grid)
         end
 
+        @info @sprintf("         fastest: %s = %.2f m/s at (i, j, k) = (%d, %d, %d), %.1f°E %.1f°N, z = %.0f m",
+                       component == 1 ? "u" : "v", max(umax, vmax), fastest[2:4]..., fastest[5:7]...)
         @info @sprintf("%6.1f h  Atlantic in %+6.2f Sv, Pacific in %+6.2f Sv, net %+6.2f Sv; mean η %+7.2f cm (parent %+7.2f); edge η − parent: Atlantic %+5.2f, Pacific %+5.2f cm; Δη shelf %+6.2f, deep %+6.2f cm; volume: edges %+6.2f, surface %+6.2f, residual %+6.2f cm; max|u|, |v| %.2f, %.2f m/s; wall %s",
                        model_hour, atlantic, pacific, atlantic + pacific, η̄, η̄ᵖ, atlantic_offset, pacific_offset,
                        shelf_δη, deep_δη, edge_cm, surface_cm, residual, umax, vmax, prettytime(1e-9 * (time_ns() - wall[])))
-        open(io -> @printf(io, "%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n", model_hour,
-                           atlantic, pacific, atlantic + pacific, η̄, shelf_δη, deep_δη, umax, vmax, atlantic_offset,
-                           pacific_offset, η̄ᵖ, edge_cm, surface_cm, residual, from_volume), file, "a")
+        open(io -> @printf(io, "%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%.3f,%.3f,%.1f\n",
+                           model_hour, atlantic, pacific, atlantic + pacific, η̄, shelf_δη, deep_δη, umax, vmax,
+                           atlantic_offset, pacific_offset, η̄ᵖ, edge_cm, surface_cm, residual, from_volume, fastest...),
+             file, "a")
         wall[] = time_ns()
         return nothing
     end

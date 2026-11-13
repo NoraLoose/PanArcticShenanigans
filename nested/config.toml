@@ -21,8 +21,8 @@ zero_net_inflow = false     # true: the Flather exterior transport has no net in
 net_inflow_control = false  # true (needs zero_net_inflow): prototype of a volume control from outside the substeps (net_inflow_control.jl); superseded by net_inflow_Sv
 # net_inflow_Sv = 0.0       # pin the total barotropic inflow through both edges together (Sv, positive into the domain), as NEMO and ROMS do; Flather splits it between the edges
 follow_glorys_volume = false  # true: set that total inflow every step so that the domain-mean η follows GLORYS's (overrides net_inflow_Sv; glorys_volume_target.jl)
-volume_relaxation_days = 2    # with follow_glorys_volume: time over which the remaining drift from GLORYS's mean η is removed
-follow_glorys_tendency = true # with follow_glorys_volume: also follow GLORYS's rate of change (jumps once a day); false: relaxation only (try volume_relaxation_days = 1)
+volume_relaxation_days = 1    # with follow_glorys_volume: time over which the remaining drift from GLORYS's mean η is removed
+follow_glorys_tendency = false # with follow_glorys_volume: true also follows GLORYS's rate of change exactly, which jumps once a day
 # edge_inflow_Sv = { atlantic = -0.8, pacific = 0.8 }   # pin the barotropic inflow through each edge (Sv, positive into the domain), as NEMO and ROMS do
 
 [coupling]

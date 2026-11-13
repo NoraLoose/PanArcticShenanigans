@@ -67,7 +67,7 @@ function set_net_inflow!(sim, target)
     return nothing
 end
 
-function add_glorys_volume_target!(simulation, net_inflow, child, parent_η, relaxation_time; tendency = true)
+function add_glorys_volume_target!(simulation, net_inflow, child, parent_η, relaxation_time; tendency = false)
     target = GLORYSVolumeTarget(net_inflow, child, parent_η, relaxation_time, tendency)
     add_callback!(simulation, sim -> set_net_inflow!(sim, target), IterationInterval(1); name = :glorys_volume_target)
     @info @sprintf("Net inflow follows GLORYS's domain-mean η (relaxation time %.1f days, tendency %s)",
