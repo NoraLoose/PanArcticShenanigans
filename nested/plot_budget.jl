@@ -1,5 +1,7 @@
 # Volume budget of one nested run, from its hourly monitor: the change in domain-mean η, the parts that came through
-# the open edges and across the surface (freshwater), the residual, and GLORYS's change in mean η.
+# the open edges and across the surface (freshwater), the residual, and GLORYS's change in mean η (top); the net inflow
+# through the edges carried by the velocities at the edge faces (the ones that carry T and S) against the inflow that
+# actually changed the volume (bottom).
 #
 #   julia --project=.. plot_budget.jl output-coupled-control-30d      # writes <folder>/volume_budget.png
 
@@ -15,7 +17,7 @@ days   = column("hour") ./ 24
 η      = column("eta_mean_cm")
 parent = column("parent_eta_mean_cm")
 
-fig = Figure(size = (800, 450))
+fig = Figure(size = (800, 800))
 ax  = Axis(fig[1, 1]; xlabel = "days", ylabel = "change in domain-mean η (cm)", title = basename(rstrip(folder, '/')))
 hlines!(ax, 0; color = :black, linewidth = 0.5)
 lines!(ax, days, parent .- parent[1]; color = :black, linewidth = 3, label = "GLORYS")
@@ -24,6 +26,14 @@ lines!(ax, days, column("edge_volume_cm"); label = "through the edges")
 lines!(ax, days, column("surface_volume_cm"); label = "across the surface (freshwater)")
 lines!(ax, days, column("budget_residual_cm"); linestyle = :dash, label = "residual")
 axislegend(ax; position = :lb, framevisible = false)
+
+if "edge_inflow_from_volume_Sv" in header
+    ax₂ = Axis(fig[2, 1]; xlabel = "days", ylabel = "net inflow through the edges (Sv)")
+    hlines!(ax₂, 0; color = :black, linewidth = 0.5)
+    lines!(ax₂, days, column("net_in_Sv"); label = "velocities at the edge faces (carry T, S)")
+    lines!(ax₂, days, column("edge_inflow_from_volume_Sv"); label = "from the volume (moves η)")
+    axislegend(ax₂; position = :lb, framevisible = false)
+end
 
 file = joinpath(folder, "volume_budget.png")
 save(file, fig)

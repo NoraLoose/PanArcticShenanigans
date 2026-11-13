@@ -82,9 +82,12 @@ parent_dataset  = GLORYSDaily()
 zero_net_inflow    = config["boundaries"]["zero_net_inflow"]
 net_inflow_control = get(config["boundaries"], "net_inflow_control", false)
 net_inflow_control && !zero_net_inflow && error("[boundaries] net_inflow_control = true needs zero_net_inflow = true")
+edge_inflow        = get(config["boundaries"], "edge_inflow_Sv", nothing)
+edge_transports    = isnothing(edge_inflow) ? nothing : (south = 1e6 * edge_inflow["atlantic"], north = 1e6 * edge_inflow["pacific"])
+@info "Open boundaries: zero_net_inflow = $zero_net_inflow, edge_transports = $edge_transports (m³/s, into the domain)"
 coupled         = config["coupling"]["coupled"]
 
-ocean = nested_ocean_simulation(grid, parent_dataset; dates, open_sides = (:south, :north), zero_net_inflow,
+ocean = nested_ocean_simulation(grid, parent_dataset; dates, open_sides = (:south, :north), zero_net_inflow, edge_transports,
                                 Δt, stop_time, dir_kw...)
 child = ocean.model.child
 

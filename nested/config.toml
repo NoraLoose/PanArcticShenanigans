@@ -18,7 +18,8 @@ dt_minutes = 20          # 20 at 100 km; 10 at 15 km
 
 [boundaries]
 zero_net_inflow = false     # true: the Flather exterior transport has no net inflow through the Atlantic and Pacific edges together
-net_inflow_control = false  # true (needs zero_net_inflow): the model's actual net inflow is held at zero, as NEMO and ROMS do (prototype, net_inflow_control.jl)
+net_inflow_control = false  # true (needs zero_net_inflow): prototype of a volume control from outside the substeps (net_inflow_control.jl); superseded by edge_inflow_Sv
+# edge_inflow_Sv = { atlantic = -0.8, pacific = 0.8 }   # pin the barotropic inflow through each edge (Sv, positive into the domain), as NEMO and ROMS do
 
 [coupling]
 coupled  = false         # true: add sea ice (nested in GLORYS) and the JRA55 atmosphere, radiation and rivers
