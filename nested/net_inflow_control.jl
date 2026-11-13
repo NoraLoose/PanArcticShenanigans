@@ -3,29 +3,36 @@
 #
 # NEMO and ROMS remove one uniform velocity from all open faces after the boundary scheme, at every barotropic
 # substep. The nested model's substeps are inside Oceananigans, so this prototype works one baroclinic step later: after
-# each time step it measures the net barotropic inflow Q through the edges and shifts the Flather exterior on both edges
-# by the uniform velocity -Q/A (A = Σ H Δ over the open faces), accumulated over the run. If Flather's η term changes
-# slowly compared with a time step, the actual net inflow stays at zero; the exterior offset (logged hourly) shows how
-# much it takes.
+# each time step it takes the net inflow through the edges from the change in the domain's volume minus the surface
+# freshwater flux, and shifts the Flather exterior on both edges by the uniform velocity -Q/A (A = Σ H Δ over the open
+# faces), accumulated over the run. The edge inflow comes from the volume rather than from the barotropic transport
+# stored at the edge faces: with the control on, the two disagree, and the volume is what we want to hold.
 #
-# Needs `zero_net_inflow = true` (for the face areas). Included by panarctic_nested.jl when
+# Hourly in <output_dir>/net_inflow_control.csv: the exterior offset, the edge inflow from the volume and from the face
+# transport (Sv). Needs `zero_net_inflow = true` (for the face areas). Included by panarctic_nested.jl when
 # `[boundaries] net_inflow_control = true`.
 
-using Oceananigans.Operators: Δxᶜᶠᶜ
+using Oceananigans.Operators: Δxᶜᶠᶜ, Azᶜᶜᶜ
 
-mutable struct NetInflowControl{W, E}
-    face_widths :: W   # per open side: the wet width of each boundary face (m), zero where dry, on the device
-    exchanger   :: E
-    area        :: Float64   # Σ H Δ over the open faces (m²)
-    offset      :: Float64   # depth-uniform velocity added to the exterior, positive into the domain (m s⁻¹)
-    sample_time :: Float64   # time of the parent sample the offset was last applied to
+mutable struct NetInflowControl{W, C, E, J, H}
+    face_widths  :: W        # per open side: the wet width of each boundary face (m), zero where dry, on the device
+    cell_area    :: C        # horizontal area of each wet cell (m²), zero where dry, on the device
+    exchanger    :: E
+    freshwater   :: J        # surface freshwater volume flux added to η (m s⁻¹, positive into the ocean)
+    displacement :: H        # η
+    area         :: Float64  # Σ H Δ over the open faces (m²)
+    offset       :: Float64  # depth-uniform velocity added to the exterior, positive into the domain (m s⁻¹)
+    sample_time  :: Float64  # time of the parent sample the offset was last applied to
+    volume       :: Float64  # Σ η A at the end of the previous step (m³)
+    edge_inflow  :: Float64  # edge inflow over the last step, from the volume (m³ s⁻¹)
 end
 
 inflow_sign(side) = side ∈ (:west, :south) ? 1 : -1
 
 function NetInflowControl(child, exchanger)
+    arch  = Oceananigans.Architectures.architecture(child.grid)
     grid  = on_architecture(CPU(), child.grid)
-    Ny    = size(grid, 2)
+    Nx, Ny = size(grid)[1:2]
     areas = exchanger.net_inflow.face_areas
     sides = keys(areas)
     face_row(side) = side == :south ? 1 : Ny + 1
@@ -33,24 +40,29 @@ function NetInflowControl(child, exchanger)
     widths = map(sides) do side
         j = face_row(side)
         area = Array(interior(on_architecture(CPU(), areas[side])))[:, 1, 1]
-        width = [area[i] > 0 ? Δxᶜᶠᶜ(i, j, 1, grid) : 0.0 for i in eachindex(area)]
-        on_architecture(Oceananigans.Architectures.architecture(child.grid), width)
+        on_architecture(arch, [area[i] > 0 ? Δxᶜᶠᶜ(i, j, 1, grid) : 0.0 for i in eachindex(area)])
     end
+
+    bottom    = Array(interior(bottom_height_field(child.grid)))[:, :, 1]
+    cell_area = on_architecture(arch, [bottom[i, j] < 0 ? Azᶜᶜᶜ(i, j, 1, grid) : 0.0 for i in 1:Nx, j in 1:Ny])
 
     A = sum(side -> sum(Base.parent(areas[side])), sides)
-    return NetInflowControl(NamedTuple{sides}(widths), exchanger, Float64(A), 0.0, Float64(exchanger.times.current))
+    control = NetInflowControl(NamedTuple{sides}(widths), cell_area, exchanger, child.forcing.η.parameters,
+                               child.free_surface.displacement, Float64(A), 0.0, Float64(exchanger.times.current),
+                               0.0, 0.0)
+    control.volume = domain_volume(control)
+    return control
 end
 
-# Net barotropic inflow through the open south and north faces (m³ s⁻¹), from the transport the tracers see
-function net_barotropic_inflow(control, child)
+domain_volume(control) = sum(view(control.displacement.data, 1:size(control.cell_area, 1), 1:size(control.cell_area, 2), 1) .* control.cell_area)
+surface_inflow(control) = sum(view(control.freshwater.data, 1:size(control.cell_area, 1), 1:size(control.cell_area, 2), 1) .* control.cell_area)
+
+# Net barotropic inflow at the open south and north faces (m³ s⁻¹), from the transport the tracers see
+function face_inflow(control, child)
     Ṽ  = child.free_surface.filtered_state.Ṽ
     Ny = size(child.grid, 2)
-    Q  = 0.0
-    for (side, width) in pairs(control.face_widths)
-        j = side == :south ? 1 : Ny + 1
-        Q += inflow_sign(side) * sum(view(Ṽ.data, 1:length(width), j, 1) .* width)
-    end
-    return Q
+    return sum(inflow_sign(side) * sum(view(Ṽ.data, 1:length(width), side == :south ? 1 : Ny + 1, 1) .* width)
+               for (side, width) in pairs(control.face_widths))
 end
 
 function shift_exterior!(control, δ; current_only = false)
@@ -61,26 +73,37 @@ function shift_exterior!(control, δ; current_only = false)
     return nothing
 end
 
-function control_net_inflow!(sim, control, child)
+function control_net_inflow!(sim, control)
     # A new parent sample arrives without the offset (zero_net_inflow has zeroed its net): give it the offset
     if control.exchanger.times.current != control.sample_time
         shift_exterior!(control, control.offset; current_only = true)
         control.sample_time = control.exchanger.times.current
     end
 
-    δ = -net_barotropic_inflow(control, child) / control.area
+    volume = domain_volume(control)
+    control.edge_inflow = (volume - control.volume) / sim.Δt - surface_inflow(control)
+    control.volume = volume
+
+    δ = -control.edge_inflow / control.area
     control.offset += δ
     shift_exterior!(control, δ)
     return nothing
 end
 
-function add_net_inflow_control!(simulation, child, exchanger)
+function add_net_inflow_control!(simulation, child, exchanger, output_dir)
     control = NetInflowControl(child, exchanger)
-    add_callback!(simulation, sim -> control_net_inflow!(sim, control, child), IterationInterval(1);
-                  name = :net_inflow_control)
-    log_offset(sim) = @info @sprintf("         net inflow control: exterior offset %+.2e m/s (%+.2f Sv)", control.offset,
-                                     control.offset * control.area / 1e6)
-    add_callback!(simulation, log_offset, TimeInterval(1hours); name = :net_inflow_control_log)
+    add_callback!(simulation, sim -> control_net_inflow!(sim, control), IterationInterval(1); name = :net_inflow_control)
+
+    file = joinpath(output_dir, "net_inflow_control.csv")
+    open(io -> println(io, "hour,offset_Sv,edge_inflow_from_volume_Sv,edge_inflow_from_faces_Sv"), file, "w")
+    function log_control(sim)
+        offset, from_volume, from_faces = control.offset * control.area / 1e6, control.edge_inflow / 1e6, face_inflow(control, child) / 1e6
+        @info @sprintf("         net inflow control: exterior offset %+.2f Sv; edge inflow from volume %+.2f, from faces %+.2f Sv",
+                       offset, from_volume, from_faces)
+        open(io -> @printf(io, "%.2f,%.4f,%.4f,%.4f\n", time(sim) / hours, offset, from_volume, from_faces), file, "a")
+        return nothing
+    end
+    add_callback!(simulation, log_control, TimeInterval(1hours); name = :net_inflow_control_log)
     @info @sprintf("Net inflow control on: open-face area %.3e m²", control.area)
     return control
 end

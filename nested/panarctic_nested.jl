@@ -111,7 +111,7 @@ end
 
 parent_η = parent_free_surface(grid, parent_dataset, dates; dir_kw...)
 add_nested_monitor!(simulation, child, output_dir; exchanger = ocean.model.exchanger, parent_η)
-net_inflow_control && add_net_inflow_control!(simulation, child, ocean.model.exchanger)
+net_inflow_control && add_net_inflow_control!(simulation, child, ocean.model.exchanger, output_dir)
 
 surface = (; u = child.velocities.u, v = child.velocities.v, T = child.tracers.T, S = child.tracers.S)
 simulation.output_writers[:surface] = JLD2Writer(child, surface; indices = (:, :, Nz), schedule = TimeInterval(3hours),
