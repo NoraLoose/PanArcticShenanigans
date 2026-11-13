@@ -32,7 +32,10 @@ end
 # η; the change in η since the first call averaged over the shelf (H < 200 m) and the deep ocean (H > 1000 m).
 # With the nested model's `exchanger`: the child's η minus the parent's η that Flather sees, averaged along each
 # edge (positive drains the domain). With `parent_η` (from parent_free_surface): the parent's domain-mean η on the
-# child grid. Written to <output_dir>/nested_monitor.csv.
+# child grid. Also a volume budget accumulated every time step: the volume through the open edges (from the
+# barotropic transport the tracers see) and across the surface (the freshwater volume flux added to η), each as a
+# change in domain-mean η, and the residual (the change in mean η minus both), which should be zero.
+# Written to <output_dir>/nested_monitor.csv.
 function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInterval(1hours),
                              exchanger = nothing, parent_η = nothing)
     Nx, Ny, Nz = size(child.grid)
@@ -48,7 +51,32 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
 
     file = joinpath(output_dir, "nested_monitor.csv")
     open(io -> println(io, "hour,atlantic_in_Sv,pacific_in_Sv,net_in_Sv,eta_mean_cm,shelf_change_cm,deep_change_cm,max_u,max_v,",
-                       "atlantic_eta_offset_cm,pacific_eta_offset_cm,parent_eta_mean_cm"), file, "w")
+                       "atlantic_eta_offset_cm,pacific_eta_offset_cm,parent_eta_mean_cm,",
+                       "edge_volume_cm,surface_volume_cm,budget_residual_cm"), file, "w")
+
+    # Volume budget, accumulated every time step
+    arch      = Oceananigans.Architectures.architecture(child.grid)
+    cpu_grid  = on_architecture(CPU(), child.grid)
+    wet_area  = sum(Azᶜᶜᶜ(i, j, 1, cpu_grid) for i in 1:Nx, j in 1:Ny if wet[i, j])
+    cell_area = on_architecture(arch, [wet[i, j] ? Azᶜᶜᶜ(i, j, 1, cpu_grid) : 0.0 for i in 1:Nx, j in 1:Ny])
+    face_width(j) = on_architecture(arch, [Oceananigans.Grids.static_column_depthᶜᶠᵃ(i, j, cpu_grid) > 0 ?
+                                           Δxᶜᶠᶜ(i, j, 1, cpu_grid) : 0.0 for i in 1:Nx])
+    south_width, north_width = face_width(1), face_width(Ny + 1)
+    Ṽ  = child.free_surface.filtered_state.Ṽ
+    Jʷ = child.forcing.η.parameters      # freshwater volume flux, m s⁻¹, positive into the ocean
+    edge_volume    = Ref(0.0)
+    surface_volume = Ref(0.0)
+
+    function accumulate_volume(sim)
+        Q = sum(view(Ṽ.data, 1:Nx, 1, 1) .* south_width) - sum(view(Ṽ.data, 1:Nx, Ny + 1, 1) .* north_width)
+        S = sum(view(Jʷ.data, 1:Nx, 1:Ny, 1) .* cell_area)
+        edge_volume[]    += Q * sim.Δt
+        surface_volume[] += S * sim.Δt
+        return nothing
+    end
+    add_callback!(simulation, accumulate_volume, IterationInterval(1); name = :volume_budget)
+    η̄₀ = Ref(NaN)
+
 
     # Child minus parent η along an edge row j (the first interior cells, where Flather reads η), Δx-weighted
     function edge_offset(η, band, j, t, g)
@@ -72,6 +100,10 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
 
         atlantic, pacific = edge_transports(child)
         η̄        = 100 * area_mean(η, wet, v.grid)
+        isnan(η̄₀[]) && (η̄₀[] = η̄)
+        edge_cm    = 100 * edge_volume[] / wet_area
+        surface_cm = 100 * surface_volume[] / wet_area
+        residual   = (η̄ - η̄₀[]) - edge_cm - surface_cm
         shelf_δη = 100 * area_mean(δη, shelf, v.grid)
         deep_δη  = 100 * area_mean(δη, deep, v.grid)
         umax, vmax = maximum(abs, child.velocities.u), maximum(abs, child.velocities.v)
@@ -87,12 +119,12 @@ function add_nested_monitor!(simulation, child, output_dir; schedule = TimeInter
             η̄ᵖ = 100 * area_mean(Array(interior(on_architecture(CPU(), ηᵖ)))[:, :, 1], wet, v.grid)
         end
 
-        @info @sprintf("%6.1f h  Atlantic in %+6.2f Sv, Pacific in %+6.2f Sv, net %+6.2f Sv; mean η %+7.2f cm (parent %+7.2f); edge η − parent: Atlantic %+5.2f, Pacific %+5.2f cm; Δη shelf %+6.2f, deep %+6.2f cm; max|u|, |v| %.2f, %.2f m/s; wall %s",
+        @info @sprintf("%6.1f h  Atlantic in %+6.2f Sv, Pacific in %+6.2f Sv, net %+6.2f Sv; mean η %+7.2f cm (parent %+7.2f); edge η − parent: Atlantic %+5.2f, Pacific %+5.2f cm; Δη shelf %+6.2f, deep %+6.2f cm; volume: edges %+6.2f, surface %+6.2f, residual %+6.2f cm; max|u|, |v| %.2f, %.2f m/s; wall %s",
                        model_hour, atlantic, pacific, atlantic + pacific, η̄, η̄ᵖ, atlantic_offset, pacific_offset,
-                       shelf_δη, deep_δη, umax, vmax, prettytime(1e-9 * (time_ns() - wall[])))
-        open(io -> @printf(io, "%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n", model_hour, atlantic, pacific,
-                           atlantic + pacific, η̄, shelf_δη, deep_δη, umax, vmax, atlantic_offset, pacific_offset, η̄ᵖ),
-             file, "a")
+                       shelf_δη, deep_δη, edge_cm, surface_cm, residual, umax, vmax, prettytime(1e-9 * (time_ns() - wall[])))
+        open(io -> @printf(io, "%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n", model_hour,
+                           atlantic, pacific, atlantic + pacific, η̄, shelf_δη, deep_δη, umax, vmax, atlantic_offset,
+                           pacific_offset, η̄ᵖ, edge_cm, surface_cm, residual), file, "a")
         wall[] = time_ns()
         return nothing
     end
