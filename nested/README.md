@@ -46,3 +46,12 @@ In `output_dir`:
   - the change in η since the start over the shelf (H < 200 m) and the deep ocean (H > 1000 m);
   - the model's η minus GLORYS's along each edge.
 - `nested_surface.jld2` (u, v, T, S at the surface, every 3 hours) and `nested_free_surface.jld2` (η, hourly).
+
+## Comparing runs
+
+`plot_monitor.jl` plots the monitors of several runs together (change in mean η against GLORYS, net inflow through
+the edges, shelf and deep η). It uses CairoMakie from the main environment and needs no GPU:
+
+```bash
+julia +1.13 --project=.. plot_monitor.jl output-nested output-coupled output-coupled-zero   # monitor_comparison.png
+```
