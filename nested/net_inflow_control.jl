@@ -54,8 +54,8 @@ function NetInflowControl(child, exchanger)
     return control
 end
 
-domain_volume(control) = sum(view(control.displacement.data, 1:size(control.cell_area, 1), 1:size(control.cell_area, 2), 1) .* control.cell_area)
-surface_inflow(control) = sum(view(control.freshwater.data, 1:size(control.cell_area, 1), 1:size(control.cell_area, 2), 1) .* control.cell_area)
+domain_volume(control)  = sum(view(interior(control.displacement), :, :, 1) .* control.cell_area)   # η sits at k = Nz + 1
+surface_inflow(control) = sum(view(interior(control.freshwater), :, :, 1) .* control.cell_area)
 
 # Net barotropic inflow at the open south and north faces (m³ s⁻¹), from the transport the tracers see
 function face_inflow(control, child)
