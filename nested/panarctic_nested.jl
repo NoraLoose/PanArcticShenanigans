@@ -88,11 +88,12 @@ edge_targets       = isnothing(edge_inflow) ? nothing : (south = 1e6 * edge_infl
 total_inflow       = get(config["boundaries"], "net_inflow_Sv", nothing)
 follow_glorys      = get(config["boundaries"], "follow_glorys_volume", false)
 net_inflow         = follow_glorys ? Ref(0.0) : isnothing(total_inflow) ? nothing : 1e6 * total_inflow
-@info "Open boundaries: zero_net_inflow = $zero_net_inflow, net_inflow = $net_inflow, edge_transports = $edge_targets (m³/s, into the domain)"
+net_inflow_depth_exponent = get(config["boundaries"], "net_inflow_depth_exponent", 0)
+@info "Open boundaries: zero_net_inflow = $zero_net_inflow, net_inflow = $net_inflow (pin ∝ H^$net_inflow_depth_exponent), edge_transports = $edge_targets (m³/s, into the domain)"
 coupled         = config["coupling"]["coupled"]
 
 ocean = nested_ocean_simulation(grid, parent_dataset; dates, open_sides = (:south, :north), zero_net_inflow,
-                                net_inflow, edge_transports = edge_targets,
+                                net_inflow, net_inflow_depth_exponent, edge_transports = edge_targets,
                                 Δt, stop_time, dir_kw...)
 child = ocean.model.child
 
