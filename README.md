@@ -35,6 +35,11 @@ Model output is written to `output_dir` (default `output/`, relative to where yo
 
 To continue a run from its latest checkpoint, set `restart = true` and run again with the same config. The run still ends at `end_date`.
 
+## Nested model
+
+[`nested/`](nested/README.md) runs the same domain with NumericalEarth's nested regional model (PR #676), in its
+own environment.
+
 ## Figures and movies
 
 Plotting is separate from the model run. There is one script per figure or movie; each takes the same config file as `panarctic.jl` and writes to `figure_dir` (default `figures/`), separate from the model output:

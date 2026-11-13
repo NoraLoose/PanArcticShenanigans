@@ -1,0 +1,20 @@
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CopernicusMarine = "cd43e856-93a3-40c8-bc9e-6146cdce14fa"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
+Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[sources]
+# NumericalEarth PR #676 (nested_ocean_model) plus PR #923 (zero_net_inflow), branch nl+fjp/nested-panarctic.
+# Move to the #676 head once #923 is merged, and to a release once #676 is.
+NumericalEarth = {url = "https://github.com/NumericalEarth/NumericalEarth.jl", rev = "5d448af5c52c30b35b8a753a133a9a3df9fc5c38"}
+
+[compat]
+CopernicusMarine = "0.2"
+JLD2 = "0.4, 0.5, 0.6"
+Oceananigans = "0.117"
+julia = "1.10"
