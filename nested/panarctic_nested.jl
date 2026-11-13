@@ -121,7 +121,8 @@ parent_η = parent_free_surface(grid, parent_dataset, dates; dir_kw...)
 add_nested_monitor!(simulation, child, output_dir; exchanger = ocean.model.exchanger, parent_η)
 net_inflow_control && add_net_inflow_control!(simulation, child, ocean.model.exchanger, output_dir)
 follow_glorys && add_glorys_volume_target!(simulation, net_inflow, child, parent_η,
-                                           config["boundaries"]["volume_relaxation_days"] * Oceananigans.Units.day)
+                                           config["boundaries"]["volume_relaxation_days"] * Oceananigans.Units.day;
+                                           tendency = get(config["boundaries"], "follow_glorys_tendency", true))
 
 surface = (; u = child.velocities.u, v = child.velocities.v, T = child.tracers.T, S = child.tracers.S)
 simulation.output_writers[:surface] = JLD2Writer(child, surface; indices = (:, :, Nz), schedule = TimeInterval(3hours),
