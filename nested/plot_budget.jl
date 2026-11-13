@@ -1,7 +1,8 @@
 # Volume budget of one nested run, from its hourly monitor: the change in domain-mean η, the parts that came through
 # the open edges and across the surface (freshwater), the residual, and GLORYS's change in mean η (top); the net inflow
 # through the edges carried by the velocities at the edge faces (the ones that carry T and S) against the inflow that
-# actually changed the volume (bottom).
+# actually changed the volume (bottom). The bottom panel starts after the first step: the first monitor sample holds
+# the interpolated initial velocities, whose net inflow (about 22 Sv) the boundary conditions remove in the first step.
 #
 #   julia --project=.. plot_budget.jl output-coupled-control-30d      # writes <folder>/volume_budget.png
 
@@ -30,8 +31,9 @@ axislegend(ax; position = :lb, framevisible = false)
 if "edge_inflow_from_volume_Sv" in header
     ax₂ = Axis(fig[2, 1]; xlabel = "days", ylabel = "net inflow through the edges (Sv)")
     hlines!(ax₂, 0; color = :black, linewidth = 0.5)
-    lines!(ax₂, days, column("net_in_Sv"); label = "velocities at the edge faces (carry T, S)")
-    lines!(ax₂, days, column("edge_inflow_from_volume_Sv"); label = "from the volume (moves η)")
+    stepped = 2:length(days)
+    lines!(ax₂, days[stepped], column("net_in_Sv")[stepped]; label = "velocities at the edge faces (carry T, S)")
+    lines!(ax₂, days[stepped], column("edge_inflow_from_volume_Sv")[stepped]; label = "from the volume (moves η)")
     axislegend(ax₂; position = :lb, framevisible = false)
 end
 
