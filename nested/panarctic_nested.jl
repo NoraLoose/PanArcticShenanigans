@@ -26,6 +26,7 @@ using CopernicusMarine   # enables the GLORYS download extension
 using CUDA, Dates, Printf
 
 include("monitor.jl")
+include("net_inflow_control.jl")
 
 arch       = config["architecture"] == "GPU" ? GPU() : CPU()
 data_dir   = config["paths"]["data_dir"]
@@ -78,7 +79,9 @@ dates      = (start_date, start_date + Day(ceil(Int, run_days) + 1))
 stop_time  = run_days * Oceananigans.Units.day   # qualified, so a `days` defined in the REPL cannot change it
 
 parent_dataset  = GLORYSDaily()
-zero_net_inflow = config["boundaries"]["zero_net_inflow"]
+zero_net_inflow    = config["boundaries"]["zero_net_inflow"]
+net_inflow_control = get(config["boundaries"], "net_inflow_control", false)
+net_inflow_control && !zero_net_inflow && error("[boundaries] net_inflow_control = true needs zero_net_inflow = true")
 coupled         = config["coupling"]["coupled"]
 
 ocean = nested_ocean_simulation(grid, parent_dataset; dates, open_sides = (:south, :north), zero_net_inflow,
@@ -108,6 +111,7 @@ end
 
 parent_η = parent_free_surface(grid, parent_dataset, dates; dir_kw...)
 add_nested_monitor!(simulation, child, output_dir; exchanger = ocean.model.exchanger, parent_η)
+net_inflow_control && add_net_inflow_control!(simulation, child, ocean.model.exchanger)
 
 surface = (; u = child.velocities.u, v = child.velocities.v, T = child.tracers.T, S = child.tracers.S)
 simulation.output_writers[:surface] = JLD2Writer(child, surface; indices = (:, :, Nz), schedule = TimeInterval(3hours),
