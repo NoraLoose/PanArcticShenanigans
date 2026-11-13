@@ -75,7 +75,7 @@ start_date = DateTime(config["time"]["start_date"])
 run_days   = config["time"]["days"]
 dates      = (start_date, start_date + Day(ceil(Int, run_days) + 1))
 Δt         = config["time"]["dt_minutes"] * minutes
-stop_time  = run_days * days
+stop_time  = run_days * Oceananigans.Units.day   # qualified, so a `days` defined in the REPL cannot change it
 
 parent_dataset  = GLORYSDaily()
 zero_net_inflow = config["boundaries"]["zero_net_inflow"]
