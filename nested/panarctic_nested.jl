@@ -50,11 +50,21 @@ if coupled
 
     jra55 = (; dataset = MultiYearJRA55(), start_date = dates[1], end_date = dates[2], dir_kw...)
     atmosphere = JRA55PrescribedAtmosphere(arch; jra55...)
-    if !config["coupling"]["pressure"]
-        # The whole record in memory, so the uniform pressure is not overwritten by a reload
+    pressure = config["coupling"]["pressure"]
+    winds    = get(config["coupling"], "winds", true)
+    if !pressure || !winds
+        # The whole record in memory, so the values set below are not overwritten by a reload
         atmosphere = JRA55PrescribedAtmosphere(arch; jra55..., time_indices_in_memory = length(atmosphere.velocities.u.times))
+    end
+    if !pressure
         fill!(parent(atmosphere.pressure.data), 101325)
         @warn "JRA55 sea-level pressure set to 101325 Pa everywhere ([coupling] pressure = false)"
+    end
+    if !winds
+        # No wind stress on the ocean or the ice; the turbulent heat and moisture fluxes then use calm air
+        fill!(parent(atmosphere.velocities.u.data), 0)
+        fill!(parent(atmosphere.velocities.v.data), 0)
+        @warn "JRA55 winds set to zero everywhere ([coupling] winds = false)"
     end
     radiation = JRA55PrescribedRadiation(arch; jra55...)
     land      = JRA55PrescribedLand(child.grid; jra55...)
