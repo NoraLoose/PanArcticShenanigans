@@ -1,5 +1,5 @@
 # Settings, packages, paths, the grid and the run's dates for the nested pan-Arctic model: included by
-# panarctic_nested.jl and by glorys_gateways_run.jl. Reads the config file named in ARGS (default config.toml).
+# panarctic_nested.jl and by glorys_gateways_native.jl. Reads the config file named in ARGS (default config.toml).
 
 using TOML
 config_file = isempty(ARGS) ? joinpath(@__DIR__, "config.toml") : ARGS[1]

@@ -5,12 +5,11 @@
 # Each section is a polyline of (longitude, latitude) points, mapped to a staircase of model faces through the cell
 # corners nearest the line, so it stays in place when the resolution changes. The setup log lists each section's faces
 # and warns when an end is in water. Hourly snapshots go to <output_dir>/gateways.csv; plot_gateways.jl takes daily
-# means and compares them with the mooring estimates. glorys_gateways (below) puts GLORYS through the same sections.
+# means and compares them with the mooring estimates. glorys_gateways_native.jl puts GLORYS through the same lines on
+# GLORYS's own grid.
 
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.Grids: inactive_node, λnode, φnode
-using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding
-using NumericalEarth.NestedModels: boundary_location, child_frame_sources, parent_ocean_sources, sample_parent!
 using Printf
 using Oceananigans.Operators: Δxᶜᶠᶜ, Δyᶠᶜᶜ, Δzᶜᶠᶜ, Δzᶠᶜᶜ
 
@@ -138,31 +137,5 @@ function add_gateway_monitor!(simulation, child, output_dir; schedule = TimeInte
     end
 
     add_callback!(simulation, gateway_monitor, schedule; name = :gateway_monitor)
-    return file
-end
-
-# GLORYS through the same sections: its daily means, interpolated onto `grid` and rotated into the grid's frame as
-# the initial state is, sampled at the center of each day of the run (noon) and written to
-# <output_dir>/glorys_gateways.csv. Run by glorys_gateways_run.jl.
-function glorys_gateways(grid, dataset, dates, output_dir; days, dir = default_download_directory(dataset))
-    sections = gateway_sections(on_architecture(CPU(), grid))
-    region   = BoundingBox(grid.underlying_grid; padding = default_horizontal_padding(dataset))
-    glorys   = PrescribedOcean(region, dates, dataset; architecture = Oceananigans.Architectures.architecture(grid), dir)
-    sources  = child_frame_sources(grid, parent_ocean_sources(glorys))
-
-    u, v, T, S = XFaceField(grid), YFaceField(grid), CenterField(grid), CenterField(grid)
-    file = joinpath(output_dir, "glorys_gateways.csv")
-    open(io -> println(io, gateway_header(sections)), file, "w")
-    for n in 0:ceil(Int, days) - 1
-        t = (n + 1/2) * Oceananigans.Units.day
-        glorys.clock.time = t
-        Oceananigans.TimeSteppers.update_state!(glorys)   # loads the days around t into memory
-        for (field, name) in ((u, :u), (v, :v), (T, :T), (S, :S))
-            sample_parent!(field, boundary_location(name), getproperty(sources, name), t)
-        end
-        values = gateway_row(sections, t / hours, u, v, T, S)
-        write_gateway_row(file, values)
-        @info @sprintf("GLORYS day %d: ", n) * join((@sprintf("%s %+.2f", s.name, values[3m - 1]) for (m, s) in enumerate(sections)), ", ") * " Sv"
-    end
     return file
 end

@@ -4,8 +4,8 @@
 # The bottom row is the sum of the four volume transports: the net inflow to the Arctic, which only a change in its
 # volume can balance (Tsubouchi et al. 2018: −0.2 Sv). Daily means and run means use whole days only.
 #
-# With <folder>/glorys_gateways.csv (glorys_gateways in gateways.jl), GLORYS's daily means through the same sections
-# are drawn as black dots.
+# With <folder>/glorys_gateways.csv (glorys_gateways_native.jl: GLORYS on its own 1/12° grid, through the same lines),
+# GLORYS's daily means are drawn as black diamonds.
 #
 #   julia --project=.. plot_gateways.jl output-glorys-sqrtH-4d      # writes <folder>/gateways.png
 
@@ -21,6 +21,8 @@ end
 column = read_columns(joinpath(folder, "gateways.csv"))
 glorys_file = joinpath(folder, "glorys_gateways.csv")
 glorys = isfile(glorys_file) ? read_columns(glorys_file) : nothing
+modelline_file = joinpath(folder, "glorys_gateways_modelline.csv")   # GLORYS through the model's staircase for each line
+modelline = isfile(modelline_file) ? read_columns(modelline_file) : nothing
 
 hour = column("hour")
 day  = floor.(Int, hour ./ 24)
@@ -41,7 +43,7 @@ quantities = (("volume", "_volume_Sv", "Sv"), ("heat", "_heat_TW", "TW"), ("fres
 gateways   = ("fram", "bso", "bering", "davis")
 
 fig = Figure(size = (1200, 1200))
-Label(fig[0, 1:3], basename(rstrip(folder, '/')) * ": hourly (line) and daily means (red dots), GLORYS daily means (black dots), observed annual means (band)"; fontsize = 18)
+Label(fig[0, 1:3], basename(rstrip(folder, '/')) * ": hourly (line) and daily means (red dots), GLORYS daily means (black; open: on the model's staircase), observed annual means (band)"; fontsize = 18)
 for (r, g) in enumerate(gateways), (c, (quantity, suffix, unit)) in enumerate(quantities)
     ax = Axis(fig[r, c]; xlabel = r == 4 && c > 1 ? "day" : "", ylabel = c == 1 ? "$g ($unit)" : unit, title = r == 1 ? quantity : "")
     low, high = getproperty(observed[g], Symbol(quantity))
@@ -50,6 +52,7 @@ for (r, g) in enumerate(gateways), (c, (quantity, suffix, unit)) in enumerate(qu
     lines!(ax, hour ./ 24, column(g * suffix); color = (:red, 0.4))
     scatter!(ax, days .+ 0.5, daily(column(g * suffix)); color = :red)
     isnothing(glorys) || scatter!(ax, glorys("hour") ./ 24, glorys(g * suffix); color = :black, marker = :diamond)
+    isnothing(modelline) || scatter!(ax, modelline("hour") ./ 24, modelline(g * suffix); color = :transparent, strokecolor = :black, strokewidth = 1, marker = :circle)
 end
 
 net = sum(column(g * "_volume_Sv") for g in gateways)
@@ -59,6 +62,7 @@ hlines!(ax, -0.2; color = :gray, linestyle = :dash)
 lines!(ax, hour ./ 24, net; color = (:red, 0.4))
 scatter!(ax, days .+ 0.5, daily(net); color = :red)
 isnothing(glorys) || scatter!(ax, glorys("hour") ./ 24, sum(glorys(g * "_volume_Sv") for g in gateways); color = :black, marker = :diamond)
+isnothing(modelline) || scatter!(ax, modelline("hour") ./ 24, sum(modelline(g * "_volume_Sv") for g in gateways); color = :transparent, strokecolor = :black, strokewidth = 1, marker = :circle)
 
 for g in gateways
     @printf("%-6s mean over %d days: volume %+6.2f Sv, heat %+7.1f TW, freshwater %+7.1f mSv\n", g, length(days),
