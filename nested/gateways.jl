@@ -138,13 +138,10 @@ function add_gateway_monitor!(simulation, child, output_dir; schedule = TimeInte
     return file
 end
 
-# GLORYS through the same sections: its daily means, interpolated onto the child grid and rotated into the grid's
-# frame as the initial state is, sampled at the center of each day of the run (noon) and written to
-# <output_dir>/glorys_gateways.csv. Run in the REPL after a run:
-#
-#     glorys_gateways(child, parent_dataset, dates, output_dir; days = run_days, dir_kw...)
-function glorys_gateways(child, dataset, dates, output_dir; days, dir = default_download_directory(dataset))
-    grid     = child.grid
+# GLORYS through the same sections: its daily means, interpolated onto `grid` and rotated into the grid's frame as
+# the initial state is, sampled at the center of each day of the run (noon) and written to
+# <output_dir>/glorys_gateways.csv. Run by glorys_gateways_run.jl.
+function glorys_gateways(grid, dataset, dates, output_dir; days, dir = default_download_directory(dataset))
     sections = gateway_sections(on_architecture(CPU(), grid))
     region   = BoundingBox(grid.underlying_grid; padding = default_horizontal_padding(dataset))
     glorys   = PrescribedOcean(region, dates, dataset; architecture = Oceananigans.Architectures.architecture(grid), dir)
@@ -155,6 +152,8 @@ function glorys_gateways(child, dataset, dates, output_dir; days, dir = default_
     open(io -> println(io, gateway_header(sections)), file, "w")
     for n in 0:ceil(Int, days) - 1
         t = (n + 1/2) * Oceananigans.Units.day
+        glorys.clock.time = t
+        Oceananigans.TimeSteppers.update_state!(glorys)   # loads the days around t into memory
         for (field, name) in ((u, :u), (v, :v), (T, :T), (S, :S))
             sample_parent!(field, boundary_location(name), getproperty(sources, name), t)
         end
