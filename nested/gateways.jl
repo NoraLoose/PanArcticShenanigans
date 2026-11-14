@@ -7,8 +7,11 @@
 # and warns when an end is in water. Hourly snapshots go to <output_dir>/gateways.csv; plot_gateways.jl takes daily
 # means and compares them with the mooring estimates. glorys_gateways (below) puts GLORYS through the same sections.
 
-using Oceananigans.Grids: inactive_node
-using NumericalEarth.NestedModels: child_frame_sources, parent_ocean_sources
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.Grids: inactive_node, λnode, φnode
+using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding
+using NumericalEarth.NestedModels: boundary_location, child_frame_sources, parent_ocean_sources, sample_parent!
+using Printf
 using Oceananigans.Operators: Δxᶜᶠᶜ, Δyᶠᶜᶜ, Δzᶜᶠᶜ, Δzᶠᶜᶜ
 
 const ρ₀cₚ = 1026 * 3991.9   # J m⁻³ K⁻¹

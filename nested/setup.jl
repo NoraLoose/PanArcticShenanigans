@@ -7,6 +7,7 @@ config = TOML.parsefile(config_file)
 @info "Settings from $config_file" config
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
+using Oceananigans.Architectures: on_architecture
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
 using NumericalEarth.DataWrangling: GEBCO2026
 using CopernicusMarine   # enables the GLORYS download extension
