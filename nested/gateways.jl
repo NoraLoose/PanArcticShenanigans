@@ -103,7 +103,7 @@ function add_gateway_monitor!(simulation, child, output_dir; schedule = TimeInte
     end
 
     file = joinpath(output_dir, "gateways.csv")
-    header = join(["hour"; [s.name .* ("_volume_Sv", "_heat_TW", "_freshwater_mSv") for s in sections]...], ',')
+    header = join(["hour"; [s.name * suffix for s in sections for suffix in ("_volume_Sv", "_heat_TW", "_freshwater_mSv")]], ',')
     open(io -> println(io, header), file, "w")
 
     function gateway_monitor(sim)
