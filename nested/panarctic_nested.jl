@@ -15,6 +15,7 @@
 # hour to <output_dir>/nested_surface.jld2 and nested_free_surface.jld2.
 
 include("setup.jl")
+include("jra55_read_fix.jl")   # JRA55 reads for runs that do not start on 1 January
 include("monitor.jl")
 include("gateways.jl")
 include("net_inflow_control.jl")
