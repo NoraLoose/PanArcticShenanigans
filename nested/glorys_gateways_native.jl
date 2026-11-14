@@ -11,8 +11,9 @@
 #   glorys_gateways_modelline.csv  through the model's staircase for that line (its cell corners at this resolution),
 #                                  still on GLORYS's grid: the difference from the first file is what the model's
 #                                  placement of the line alone changes
-# and prints a table per day plus the sum of the four (the net inflow to the Arctic, which only a change in its volume,
-# runoff and Fury and Hecla Strait can balance: it should be a few tenths of a Sv, not several Sv).
+#   glorys_arctic_budget.csv       GLORYS's Arctic volume budget: the four gateways plus Fury and Hecla Strait against
+#                                  the change in its sea level inside them (the closure check of the reference)
+# and prints a table per day plus the sum of the four.
 #
 # Downloads, once, small boxes around each gateway: daily uo, vo, thetao, so (all depths) and the static deptho.
 # Builds the model grid on the CPU only to find the model's staircase; needs no GPU.
@@ -237,6 +238,94 @@ boxes = map(enumerate(gateway_lines)) do (g, (name, points, Tʳᵉᶠ))
     (; name, region, box, Tʳᵉᶠ, faces = lines[1], model_faces = lines[2])
 end
 
+# ## Closure: GLORYS's Arctic volume budget
+#
+# The Arctic is the water reached from the North Pole without crossing the four gateway lines or Fury and Hecla
+# Strait (closed off so that Hudson Bay, which drains to the Labrador Sea, stays outside). Its volume changes by
+#
+#     A d⟨ηᴳ⟩/dt = (sum of the four gateways) + (Fury and Hecla) + runoff + P − E,
+#
+# so the residual (gateways + Fury and Hecla − A d⟨ηᴳ⟩/dt) should be about −(runoff + P − E) ≈ −0.17 Sv
+# (Serreze et al. 2006: rivers ≈ 0.10 Sv, P − E ≈ 0.06 Sv). A larger residual is how far GLORYS's transports and its
+# sea level disagree (regridding of the daily product; sea-level assimilation). Uses the full-domain daily zos and
+# the static deptho the model run downloads (same region, so no new files).
+
+const closure_lines = [("fury_hecla", [(-84.2, 69.3), (-84.2, 70.4)], 0.0)]   # Melville Peninsula to Baffin Island, + west
+
+closure_boxes = map(closure_lines) do (name, points, Tʳᵉᶠ)
+    region = line_box(points)
+    static = read_variable(:depth, GLORYSStatic(), region)
+    sample = read_variable(:u_velocity, GLORYSDaily(), region; date = run_dates[1])
+    box    = GatewayBox(LonLatCorners(sample.lon, sample.lat), sample.lat, level_interfaces(sample.depth), static.data)
+    faces  = lonlat_faces(lonlat_corner_path(box.corners, points))
+    @info @sprintf("GLORYS %-10s %3d faces (%d wet)", name, length(faces), count(f -> wet_floor(face_floor(box, f)), faces))
+    (; name, region, box, Tʳᵉᶠ, faces)
+end
+
+domain_region = BoundingBox(grid.underlying_grid; padding = NumericalEarth.DataWrangling.default_horizontal_padding(GLORYSDaily()))
+arctic_static = read_variable(:depth, GLORYSStatic(), domain_region)
+
+# Keep one period of longitude when the box goes round the globe
+function one_period(lon)
+    Δ = lon[2] - lon[1]
+    periodic = lon[end] - lon[1] + Δ ≥ 360 - Δ / 2
+    keep = periodic ? findall(λ -> λ < lon[1] + 360 - Δ / 2, lon) : eachindex(lon)
+    return keep, periodic
+end
+arctic_keep, arctic_periodic = one_period(arctic_static.lon)
+arctic_lon, arctic_lat = arctic_static.lon[arctic_keep], arctic_static.lat
+arctic_corners = LonLatCorners(arctic_lon, arctic_lat)
+NIa, NJa = length(arctic_lon), length(arctic_lat)
+arctic_wet = wet_floor.(arctic_static.data[arctic_keep, :])
+
+wrap_i(I) = arctic_periodic ? mod1(I, NIa) : I
+blocked = Set{Tuple{Symbol, Int, Int}}()
+for (name, points, _) in vcat(gateway_lines, closure_lines)
+    for (kind, I, J, _) in lonlat_faces(lonlat_corner_path(arctic_corners, points))
+        push!(blocked, (kind, wrap_i(I), J))
+    end
+end
+
+# Flood fill from the wet cell nearest the pole; crossing a blocked face is not allowed
+function arctic_mask(wet, blocked)
+    NI, NJ = size(wet)
+    seed = (findfirst(i -> wet[i, NJ], 1:NI), NJ)
+    mask = falses(NI, NJ)
+    mask[seed...] = true
+    queue = [seed]
+    leak = nothing
+    while !isempty(queue)
+        i, j = pop!(queue)
+        j == 1 && isnothing(leak) && (leak = (i, j))
+        for (ni, nj, face) in ((i + 1, j, (:u, wrap_i(i + 1), j)), (i - 1, j, (:u, wrap_i(i), j)),
+                               (i, j + 1, (:v, i, j + 1)),         (i, j - 1, (:v, i, j)))
+            ni = wrap_i(ni)
+            (1 ≤ ni ≤ NI && 1 ≤ nj ≤ NJ) || continue
+            (wet[ni, nj] && !mask[ni, nj] && face ∉ blocked) || continue
+            mask[ni, nj] = true
+            push!(queue, (ni, nj))
+        end
+    end
+    return mask, leak
+end
+arctic, leak = arctic_mask(arctic_wet, blocked)
+
+Δλa, Δφa = deg2rad(arctic_corners.Δλ), arctic_corners.Δφ
+cell_area = [R_earth^2 * Δλa * (sind(min(φ + Δφa / 2, 90)) - sind(φ - Δφa / 2)) for _ in arctic_lon, φ in arctic_lat]
+arctic_area = sum(cell_area[arctic])
+@info @sprintf("Arctic inside the five lines: %.3e m² (%d GLORYS cells), southernmost %.1f°N", arctic_area, count(arctic),
+               minimum(arctic_lat[j] for i in 1:NIa, j in 1:NJa if arctic[i, j]))
+isnothing(leak) ||
+    @warn @sprintf("The Arctic mask reaches the edge of the box at %.2f°E %.2f°N: a line does not close, so the budget is not an Arctic budget",
+                   arctic_lon[leak[1]], arctic_lat[leak[2]])
+
+# Arctic volume anomaly from the daily zos, m³
+function arctic_volume(date)
+    ηᴳ = read_variable(:free_surface, GLORYSDaily(), domain_region; date)
+    η  = ηᴳ.data[arctic_keep, :]
+    return sum(cell_area[i, j] * η[i, j] for i in 1:NIa, j in 1:NJa if arctic[i, j] && isfinite(η[i, j]))
+end
+
 # ## Transports, day by day
 
 files = (joinpath(output_dir, "glorys_gateways.csv"), joinpath(output_dir, "glorys_gateways_modelline.csv"))
@@ -248,12 +337,16 @@ end
 for b in boxes
     @printf(" %15s", b.name)
 end
-@printf(" %15s\n", "sum")
+@printf(" %15s %8s\n", "sum", "F&H")
 @printf("%-12s", "")
 for _ in 1:length(boxes) + 1
     @printf(" %7s %7s", "line", "model")
 end
 println()
+
+gateway_sum = Float64[]
+fury_hecla  = Float64[]
+volume      = Float64[]
 
 for (n, date) in enumerate(run_dates)
     rows = (Float64[24 * (n - 1) + 12], Float64[24 * (n - 1) + 12])   # GLORYS daily means are centred at noon
@@ -268,11 +361,41 @@ for (n, date) in enumerate(run_dates)
         end
     end
     foreach(write_gateway_row, files, rows)
+
+    Qᶜ = 0.0
+    for b in closure_boxes
+        fields = map(name -> read_variable(name, GLORYSDaily(), b.region; date).data,
+                     (:u_velocity, :v_velocity, :temperature, :salinity))
+        Qᶜ += native_transport(b.box, b.faces, b.Tʳᵉᶠ, fields...)[1] / 1e6
+    end
+    push!(gateway_sum, sum(rows[1][3g - 1] for g in 1:length(boxes)))
+    push!(fury_hecla, Qᶜ)
+    push!(volume, arctic_volume(date))
+
     @printf("%-12s", Date(date))
     for g in 1:length(boxes)
         @printf(" %+7.2f %+7.2f", rows[1][3g - 1], rows[2][3g - 1])
     end
-    @printf(" %+7.2f %+7.2f\n", sum(rows[1][3g - 1] for g in 1:length(boxes)), sum(rows[2][3g - 1] for g in 1:length(boxes)))
+    @printf(" %+7.2f %+7.2f %+8.3f\n", gateway_sum[end], sum(rows[2][3g - 1] for g in 1:length(boxes)), Qᶜ)
 end
-println("\nvolume transport, Sv, positive into the Arctic; line = the gateway line, model = the model's staircase for it")
+println("\nvolume transport, Sv, positive into the Arctic; line = the gateway line, model = the model's staircase for it;")
+println("F&H = Fury and Hecla Strait (positive into the Arctic)")
 @info "Wrote $(files[1]) and $(files[2])"
+
+# ## The budget, between consecutive daily means (at midnight)
+
+budget_file = joinpath(output_dir, "glorys_arctic_budget.csv")
+open(budget_file, "w") do io
+    println(io, "hour,gateways_Sv,fury_hecla_Sv,dVdt_Sv,residual_Sv,mean_eta_change_cm")
+    @printf("\n%-12s %9s %9s %9s %9s\n", "midnight", "inflow", "A dη/dt", "residual", "Δ⟨η⟩ cm")
+    for n in 1:length(run_dates) - 1
+        inflow = (gateway_sum[n] + gateway_sum[n + 1] + fury_hecla[n] + fury_hecla[n + 1]) / 2
+        dVdt   = (volume[n + 1] - volume[n]) / Oceananigans.Units.day / 1e6
+        Δη     = 100 * (volume[n + 1] - volume[1]) / arctic_area
+        println(io, join((@sprintf("%.4f", x) for x in (24n, (gateway_sum[n] + gateway_sum[n + 1]) / 2,
+                                                          (fury_hecla[n] + fury_hecla[n + 1]) / 2, dVdt, inflow - dVdt, Δη)), ','))
+        @printf("%-12s %+9.3f %+9.3f %+9.3f %+9.2f\n", Date(run_dates[n + 1]), inflow, dVdt, inflow - dVdt, Δη)
+    end
+end
+println("inflow = four gateways + Fury and Hecla (Sv); residual = inflow − A d⟨ηᴳ⟩/dt, expected ≈ −0.17 Sv (runoff + P − E)")
+@info "Wrote $budget_file"

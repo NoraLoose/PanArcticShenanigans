@@ -93,4 +93,10 @@ if coupled
     add_callback!(simulation, ice_progress, TimeInterval(6hours))
 end
 
-run!(simulation)
+# PANARCTIC_DOWNLOAD_ONLY=1: build everything (which downloads all the GLORYS and JRA55 data for the run's dates)
+# and stop before the first time step. Use with PANARCTIC_ARCHITECTURE=CPU to leave the GPUs free.
+if get(ENV, "PANARCTIC_DOWNLOAD_ONLY", "0") == "1"
+    @info "PANARCTIC_DOWNLOAD_ONLY=1: the data for $(dates[1]) to $(dates[2]) are downloaded; not running"
+else
+    run!(simulation)
+end
