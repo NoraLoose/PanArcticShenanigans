@@ -1,0 +1,38 @@
+# Run settings: as glorys-sqrtH-4d at 15 km (only the resolution and time step change; ETOPO kept so the bathymetry
+# source is the same). 5 days: the gateways at a resolution where Fram and the BSO are several cells wide.
+#
+# Settings for nested/panarctic_nested.jl: the pan-Arctic ocean (and optionally sea ice and JRA55) nested in GLORYS
+# with NumericalEarth's nested_ocean_model.
+#
+# Run from the nested/ folder:  julia +1.13 --project=. panarctic_nested.jl [config file]
+
+architecture = "GPU"   # "GPU" or "CPU"
+
+[grid]
+spacing_km = 15          # 100 (≈1°) for quick tests; 15 for the production grid
+Nz         = 20
+depth      = 5000        # m
+bathymetry = "ETOPO"     # "ETOPO" (NumericalEarth's default) or "GEBCO2026" (as panarctic.jl; regridding needs ~55 GB of memory, cached)
+
+[time]
+start_date = 1993-01-01  # the run starts at 00:00 on this date, from GLORYS
+days       = 5
+dt_minutes = 10          # 20 at 100 km; 10 at 15 km
+
+[boundaries]
+zero_net_inflow = false     # true: the Flather exterior transport has no net inflow through the Atlantic and Pacific edges together
+net_inflow_control = false  # true (needs zero_net_inflow): prototype of a volume control from outside the substeps (net_inflow_control.jl); superseded by net_inflow_Sv
+# net_inflow_Sv = 0.0       # pin the total barotropic inflow through both edges together (Sv, positive into the domain), as NEMO and ROMS do; Flather splits it between the edges
+follow_glorys_volume = true  # true: set that total inflow every step so that the domain-mean η follows GLORYS's (overrides net_inflow_Sv; glorys_volume_target.jl)
+volume_relaxation_days = 1    # with follow_glorys_volume: time over which the remaining drift from GLORYS's mean η is removed
+follow_glorys_tendency = false # with follow_glorys_volume: true also follows GLORYS's rate of change exactly
+net_inflow_depth_exponent = 0.5 # the pin shifts each edge column's transport ∝ H^0.5
+# edge_inflow_Sv = { atlantic = -0.8, pacific = 0.8 }   # pin the barotropic inflow through each edge (Sv, positive into the domain), as NEMO and ROMS do
+
+[coupling]
+coupled  = true         # true: add sea ice (nested in GLORYS) and the JRA55 atmosphere, radiation and rivers
+pressure = false         # with coupled = true: false sets the JRA55 sea-level pressure to 101325 Pa everywhere (GLORYS's η has no inverse barometer)
+
+[paths]
+data_dir   = ""          # where downloads are stored; "" = each dataset's default cache
+output_dir = "output-glorys-sqrtH-15km-5d"
