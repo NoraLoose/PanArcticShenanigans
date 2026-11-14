@@ -99,7 +99,7 @@ end
 corner_lonlat(c::LonLatCorners, I, J) = (c.λ₀ + (I - 1) * c.Δλ, c.φ₀ + (J - 1) * c.Δφ)
 
 function nearest_corner(c::LonLatCorners, λ, φ)
-    I = 1 + round(Int, (mod(λ - c.λ₀ + 180, 360) - 180) / c.Δλ)
+    I = 1 + round(Int, mod(λ - c.λ₀, 360) / c.Δλ)   # the box starts at λ₀ (any width, including all longitudes)
     J = 1 + round(Int, (φ - c.φ₀) / c.Δφ)
     (1 ≤ I ≤ c.NI && 1 ≤ J ≤ c.NJ) || error(@sprintf("point %.2f°E %.2f°N is outside the downloaded box", λ, φ))
     return (I, J)
