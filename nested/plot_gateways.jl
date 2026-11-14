@@ -1,4 +1,4 @@
-# Daily-mean volume, heat and freshwater transport through Fram Strait, the Barents Sea Opening, Bering Strait and
+# Hourly (thin line) and daily-mean (dots) volume, heat and freshwater transport through Fram Strait, the Barents Sea Opening, Bering Strait and
 # Davis Strait (gateways.csv), positive into the Arctic, against the mooring-based ranges compiled by Shu et al. (2023,
 # GMD 16, 2539, Table 3). The observed ranges are multi-year annual means; the run covers days to weeks of one winter.
 #
@@ -29,14 +29,14 @@ quantities = (("volume", "_volume_Sv", "Sv"), ("heat", "_heat_TW", "TW"), ("fres
 gateways   = ("fram", "bso", "bering", "davis")
 
 fig = Figure(size = (1200, 1000))
-Label(fig[0, 1:3], basename(rstrip(folder, '/')) * ": daily means (line) against observed annual means (band)"; fontsize = 18)
+Label(fig[0, 1:3], basename(rstrip(folder, '/')) * ": hourly (line) and daily means (dots) against observed annual means (band)"; fontsize = 18)
 for (r, g) in enumerate(gateways), (c, (quantity, suffix, unit)) in enumerate(quantities)
     ax = Axis(fig[r, c]; xlabel = r == 4 ? "day" : "", ylabel = c == 1 ? "$g ($unit)" : unit, title = r == 1 ? quantity : "")
     low, high = getproperty(observed[g], Symbol(quantity))
     hspan!(ax, low, high; color = (:gray, 0.3))
     hlines!(ax, 0; color = :black, linewidth = 0.5)
-    values = daily(column(g * suffix))
-    scatterlines!(ax, days .+ 0.5, values; color = :red)
+    lines!(ax, hour ./ 24, column(g * suffix); color = (:red, 0.4))
+    scatter!(ax, days .+ 0.5, daily(column(g * suffix)); color = :red)
 end
 
 for g in gateways
