@@ -14,7 +14,7 @@ using CopernicusMarine   # enables the GLORYS download extension
 using CUDA, Dates, Printf
 
 
-arch       = config["architecture"] == "GPU" ? GPU() : CPU()
+arch       = get(ENV, "PANARCTIC_ARCHITECTURE", config["architecture"]) == "GPU" ? GPU() : CPU()   # the variable overrides the config
 data_dir   = config["paths"]["data_dir"]
 dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
 output_dir = mkpath(config["paths"]["output_dir"])

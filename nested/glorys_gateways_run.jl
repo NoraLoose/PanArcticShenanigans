@@ -4,6 +4,7 @@
 #
 #   julia --project=. glorys_gateways_run.jl runs/glorys-sqrtH-4d.toml
 
+ENV["PANARCTIC_ARCHITECTURE"] = "CPU"
 include("setup.jl")
 include("gateways.jl")
 
