@@ -165,6 +165,12 @@ end
 inside(data, (i, j)) = 1 ≤ i ≤ size(data, 1) && 1 ≤ j ≤ size(data, 2)
 wet_floor(h) = isfinite(h) && h > 0   # deptho is missing or 0 on land
 
+# The shallower sea floor of the two cells on either side of a face
+function face_floor(box, f)
+    (a, b), _ = face_geometry(box, f[1], f[2], f[3])
+    return min(box.deptho[a...], box.deptho[b...])
+end
+
 function native_transport(box::GatewayBox, faces, Tʳᵉᶠ, u, v, T, S)
     volume = heat = freshwater = 0.0
     Nk = length(box.zf) - 1
@@ -218,13 +224,12 @@ boxes = map(enumerate(gateway_lines)) do (g, (name, points, Tʳᵉᶠ))
     lines = map((("line", points), ("model line", model_lines[g]))) do (label, pts)
         path  = lonlat_corner_path(box.corners, pts)
         faces = lonlat_faces(path)
-        face_floor(f) = ((a, b), _ = face_geometry(box, f[1], f[2], f[3]); min(box.deptho[a...], box.deptho[b...]))
-        wet   = count(f -> wet_floor(face_floor(f)), faces)
+        wet   = count(f -> wet_floor(face_floor(box, f)), faces)
         width = sum(f -> face_geometry(box, f[1], f[2], f[3])[2], faces)
         @info @sprintf("GLORYS %-6s %-10s %5d faces (%d wet), %.0f km of staircase", name, label, length(faces), wet, width / 1e3)
         ends = (lonlat_faces(path[1:2]), lonlat_faces(path[end-1:end]))
         for f in Iterators.flatten(ends)
-            wet_floor(face_floor(f)) &&
+            wet_floor(face_floor(box, f)) &&
                 @warn "GLORYS $name ($label): an end of the line is in water on GLORYS's grid"
         end
         faces
