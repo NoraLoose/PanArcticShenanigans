@@ -4,15 +4,23 @@
 # The bottom row is the sum of the four volume transports: the net inflow to the Arctic, which only a change in its
 # volume can balance (Tsubouchi et al. 2018: −0.2 Sv). Daily means and run means use whole days only.
 #
+# With <folder>/glorys_gateways.csv (glorys_gateways in gateways.jl), GLORYS's daily means through the same sections
+# are drawn as black dots.
+#
 #   julia --project=.. plot_gateways.jl output-glorys-sqrtH-4d      # writes <folder>/gateways.png
 
 using CairoMakie, Printf
 
 folder = isempty(ARGS) ? "output-nested" : ARGS[1]
-text   = readlines(joinpath(folder, "gateways.csv"))
-header = [strip(name, ['(', ')', '"', ' ']) for name in split(text[1], ',')]   # also reads the first version's header
-rows   = [parse.(Float64, split(line, ',')) for line in text[2:end] if !isempty(line)]
-column(name) = [row[findfirst(==(name), header)] for row in rows]
+function read_columns(file)
+    text   = readlines(file)
+    header = [strip(name, ['(', ')', '"', ' ']) for name in split(text[1], ',')]   # also reads the first version's header
+    rows   = [parse.(Float64, split(line, ',')) for line in text[2:end] if !isempty(line)]
+    return name -> [row[findfirst(==(name), header)] for row in rows]
+end
+column = read_columns(joinpath(folder, "gateways.csv"))
+glorys_file = joinpath(folder, "glorys_gateways.csv")
+glorys = isfile(glorys_file) ? read_columns(glorys_file) : nothing
 
 hour = column("hour")
 day  = floor.(Int, hour ./ 24)
@@ -33,7 +41,7 @@ quantities = (("volume", "_volume_Sv", "Sv"), ("heat", "_heat_TW", "TW"), ("fres
 gateways   = ("fram", "bso", "bering", "davis")
 
 fig = Figure(size = (1200, 1200))
-Label(fig[0, 1:3], basename(rstrip(folder, '/')) * ": hourly (line) and daily means (dots) against observed annual means (band)"; fontsize = 18)
+Label(fig[0, 1:3], basename(rstrip(folder, '/')) * ": hourly (line) and daily means (red dots), GLORYS daily means (black dots), observed annual means (band)"; fontsize = 18)
 for (r, g) in enumerate(gateways), (c, (quantity, suffix, unit)) in enumerate(quantities)
     ax = Axis(fig[r, c]; xlabel = r == 4 && c > 1 ? "day" : "", ylabel = c == 1 ? "$g ($unit)" : unit, title = r == 1 ? quantity : "")
     low, high = getproperty(observed[g], Symbol(quantity))
@@ -41,6 +49,7 @@ for (r, g) in enumerate(gateways), (c, (quantity, suffix, unit)) in enumerate(qu
     hlines!(ax, 0; color = :black, linewidth = 0.5)
     lines!(ax, hour ./ 24, column(g * suffix); color = (:red, 0.4))
     scatter!(ax, days .+ 0.5, daily(column(g * suffix)); color = :red)
+    isnothing(glorys) || scatter!(ax, glorys("hour") ./ 24, glorys(g * suffix); color = :black, marker = :diamond)
 end
 
 net = sum(column(g * "_volume_Sv") for g in gateways)
@@ -49,12 +58,21 @@ hlines!(ax, 0; color = :black, linewidth = 0.5)
 hlines!(ax, -0.2; color = :gray, linestyle = :dash)
 lines!(ax, hour ./ 24, net; color = (:red, 0.4))
 scatter!(ax, days .+ 0.5, daily(net); color = :red)
+isnothing(glorys) || scatter!(ax, glorys("hour") ./ 24, sum(glorys(g * "_volume_Sv") for g in gateways); color = :black, marker = :diamond)
 
 for g in gateways
     @printf("%-6s mean over %d days: volume %+6.2f Sv, heat %+7.1f TW, freshwater %+7.1f mSv\n", g, length(days),
             mean_over_run(column(g * "_volume_Sv")), mean_over_run(column(g * "_heat_TW")), mean_over_run(column(g * "_freshwater_mSv")))
 end
 @printf("sum of the four volume transports over %d days: %+6.2f Sv (Tsubouchi et al. 2018: -0.2 Sv)\n", length(days), mean_over_run(net))
+if !isnothing(glorys)
+    mean(x) = sum(x) / length(x)
+    for g in gateways
+        @printf("GLORYS %-6s mean: volume %+6.2f Sv, heat %+7.1f TW, freshwater %+7.1f mSv\n", g,
+                mean(glorys(g * "_volume_Sv")), mean(glorys(g * "_heat_TW")), mean(glorys(g * "_freshwater_mSv")))
+    end
+    @printf("GLORYS sum of the four: %+6.2f Sv\n", mean(sum(glorys(g * "_volume_Sv") for g in gateways)))
+end
 
 file = joinpath(folder, "gateways.png")
 save(file, fig)

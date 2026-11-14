@@ -5,9 +5,10 @@
 # Each section is a polyline of (longitude, latitude) points, mapped to a staircase of model faces through the cell
 # corners nearest the line, so it stays in place when the resolution changes. The setup log lists each section's faces
 # and warns when an end is in water. Hourly snapshots go to <output_dir>/gateways.csv; plot_gateways.jl takes daily
-# means and compares them with the mooring estimates.
+# means and compares them with the mooring estimates. glorys_gateways (below) puts GLORYS through the same sections.
 
 using Oceananigans.Grids: inactive_node
+using NumericalEarth.NestedModels: child_frame_sources, parent_ocean_sources
 using Oceananigans.Operators: Δxᶜᶠᶜ, Δyᶠᶜᶜ, Δzᶜᶠᶜ, Δzᶠᶜᶜ
 
 const ρ₀cₚ = 1026 * 3991.9   # J m⁻³ K⁻¹
@@ -63,7 +64,8 @@ end
 wet_face(kind, i, j, k, g) = kind === :v ? !inactive_node(i, j, k, g, Center(), Face(), Center()) :
                                            !inactive_node(i, j, k, g, Face(), Center(), Center())
 
-# Volume (m³ s⁻¹), heat (W) and freshwater (m³ s⁻¹) through a section, from CPU copies of u, v, T, S
+# Volume (m³ s⁻¹), heat (W) and freshwater (m³ s⁻¹) through a section, from CPU copies of u, v, T, S. A face where
+# the velocity is not finite (land in a parent dataset) carries nothing; where T or S is not, it carries volume only.
 function section_transport(faces, Tʳᵉᶠ, u, v, T, S)
     g  = v.grid
     Nz = size(g, 3)
@@ -72,25 +74,27 @@ function section_transport(faces, Tʳᵉᶠ, u, v, T, S)
         wet_face(kind, i, j, k, g) || continue
         q = kind === :v ? sgn * v[i, j, k] * Δxᶜᶠᶜ(i, j, k, g) * Δzᶜᶠᶜ(i, j, k, g) :
                           sgn * u[i, j, k] * Δyᶠᶜᶜ(i, j, k, g) * Δzᶠᶜᶜ(i, j, k, g)
+        isfinite(q) || continue
         i₀, j₀ = kind === :v ? (i, j - 1) : (i - 1, j)            # the cell on the other side of the face
         wet₀ = !inactive_node(i₀, j₀, k, g, Center(), Center(), Center())
         wet₁ = !inactive_node(i, j, k, g, Center(), Center(), Center())
         Tᶠ = (wet₀ * T[i₀, j₀, k] + wet₁ * T[i, j, k]) / (wet₀ + wet₁)
         Sᶠ = (wet₀ * S[i₀, j₀, k] + wet₁ * S[i, j, k]) / (wet₀ + wet₁)
-        volume     += q
-        heat       += ρ₀cₚ * q * (Tᶠ - Tʳᵉᶠ)
-        freshwater += q * (1 - Sᶠ / Sʳᵉᶠ)
+        volume += q
+        if isfinite(Tᶠ) && isfinite(Sᶠ)
+            heat       += ρ₀cₚ * q * (Tᶠ - Tʳᵉᶠ)
+            freshwater += q * (1 - Sᶠ / Sʳᵉᶠ)
+        end
     end
     return volume, heat, freshwater
 end
 
-function add_gateway_monitor!(simulation, child, output_dir; schedule = TimeInterval(1hours))
-    grid = on_architecture(CPU(), child.grid)
+# The four sections as staircases of faces on `grid` (a CPU grid)
+function gateway_sections(grid)
     Nx, Ny, Nz = size(grid)
     corner_λ = [λnode(i, j, 1, grid, Face(), Face(), Center()) for i in 1:Nx+1, j in 1:Ny+1]
     corner_φ = [φnode(i, j, 1, grid, Face(), Face(), Center()) for i in 1:Nx+1, j in 1:Ny+1]
-
-    sections = map(gateway_lines) do (name, points, Tʳᵉᶠ)
+    return map(gateway_lines) do (name, points, Tʳᵉᶠ)
         path  = corner_path(points, corner_λ, corner_φ)
         faces = path_faces(path)
         wet   = count(f -> any(k -> wet_face(f[1], f[2], f[3], k, grid), 1:Nz), faces)
@@ -101,24 +105,62 @@ function add_gateway_monitor!(simulation, child, output_dir; schedule = TimeInte
             @warn "Gateway $name: an end of the line is in water at this resolution, so water can pass round it"
         (; name, faces, Tʳᵉᶠ)
     end
+end
 
+gateway_header(sections) = join(["hour"; [s.name * suffix for s in sections for suffix in ("_volume_Sv", "_heat_TW", "_freshwater_mSv")]], ',')
+
+# One CSV row: the hour, then volume (Sv), heat (TW) and freshwater (mSv) for each section, from fields on any architecture
+function gateway_row(sections, hour, u, v, T, S)
+    u, v, T, S = map(f -> on_architecture(CPU(), f), (u, v, T, S))
+    values = Float64[hour]
+    for s in sections
+        Q, H, F = section_transport(s.faces, s.Tʳᵉᶠ, u, v, T, S)
+        append!(values, (Q / 1e6, H / 1e12, F / 1e3))
+    end
+    return values
+end
+
+write_gateway_row(file, values) = open(io -> println(io, join((@sprintf("%.4f", x) for x in values), ',')), file, "a")
+
+function add_gateway_monitor!(simulation, child, output_dir; schedule = TimeInterval(1hours))
+    sections = gateway_sections(on_architecture(CPU(), child.grid))
     file = joinpath(output_dir, "gateways.csv")
-    header = join(["hour"; [s.name * suffix for s in sections for suffix in ("_volume_Sv", "_heat_TW", "_freshwater_mSv")]], ',')
-    open(io -> println(io, header), file, "w")
+    open(io -> println(io, gateway_header(sections)), file, "w")
 
     function gateway_monitor(sim)
-        u, v = on_architecture(CPU(), child.velocities.u), on_architecture(CPU(), child.velocities.v)
-        T, S = on_architecture(CPU(), child.tracers.T), on_architecture(CPU(), child.tracers.S)
-        values = Float64[time(sim) / hours]
-        for s in sections
-            Q, H, F = section_transport(s.faces, s.Tʳᵉᶠ, u, v, T, S)
-            append!(values, (Q / 1e6, H / 1e12, F / 1e3))
-        end
-        open(io -> println(io, join((@sprintf("%.4f", x) for x in values), ',')), file, "a")
+        values = gateway_row(sections, time(sim) / hours, child.velocities.u, child.velocities.v, child.tracers.T, child.tracers.S)
+        write_gateway_row(file, values)
         @info "         gateways (Sv): " * join((@sprintf("%s %+.2f", s.name, values[3n - 1]) for (n, s) in enumerate(sections)), ", ")
         return nothing
     end
 
     add_callback!(simulation, gateway_monitor, schedule; name = :gateway_monitor)
+    return file
+end
+
+# GLORYS through the same sections: its daily means, interpolated onto the child grid and rotated into the grid's
+# frame as the initial state is, sampled at the center of each day of the run (noon) and written to
+# <output_dir>/glorys_gateways.csv. Run in the REPL after a run:
+#
+#     glorys_gateways(child, parent_dataset, dates, output_dir; days = run_days, dir_kw...)
+function glorys_gateways(child, dataset, dates, output_dir; days, dir = default_download_directory(dataset))
+    grid     = child.grid
+    sections = gateway_sections(on_architecture(CPU(), grid))
+    region   = BoundingBox(grid.underlying_grid; padding = default_horizontal_padding(dataset))
+    glorys   = PrescribedOcean(region, dates, dataset; architecture = Oceananigans.Architectures.architecture(grid), dir)
+    sources  = child_frame_sources(grid, parent_ocean_sources(glorys))
+
+    u, v, T, S = XFaceField(grid), YFaceField(grid), CenterField(grid), CenterField(grid)
+    file = joinpath(output_dir, "glorys_gateways.csv")
+    open(io -> println(io, gateway_header(sections)), file, "w")
+    for n in 0:ceil(Int, days) - 1
+        t = (n + 1/2) * Oceananigans.Units.day
+        for (field, name) in ((u, :u), (v, :v), (T, :T), (S, :S))
+            sample_parent!(field, boundary_location(name), getproperty(sources, name), t)
+        end
+        values = gateway_row(sections, t / hours, u, v, T, S)
+        write_gateway_row(file, values)
+        @info @sprintf("GLORYS day %d: ", n) * join((@sprintf("%s %+.2f", s.name, values[3m - 1]) for (m, s) in enumerate(sections)), ", ") * " Sv"
+    end
     return file
 end
