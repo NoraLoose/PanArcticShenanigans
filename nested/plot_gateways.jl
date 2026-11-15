@@ -178,7 +178,7 @@ if has(model, "nares_volume_Sv") || has(glorys, "nares_volume_Sv")
         cells = [@sprintf("%+6.2f/%+6.2f", M(g), G(g)) for g in caa]
         push!(cells, @sprintf("%+6.2f/%+6.2f", sum(M, caa), sum(G, caa)))
         push!(cells, @sprintf("%+6.2f/%+6.2f", M("davis"), G("davis")))
-        @printf("%-10s %15s %15s %15s %15s %15s\n", "$a–$b", cells...)
+        @printf("%-10s %15s %15s %15s %15s %15s\n", "$(a)–$(b)", cells...)
     end
 end
 
