@@ -1,0 +1,11 @@
+# Tsubouchi et al. (2018), JPO 48, 2029-2055, Table 3: annual mean and standard deviation, Sep 2005 - Aug 2006.
+# Signs converted to POSITIVE INTO THE ARCTIC for all three quantities (the paper's freshwater is positive out of the
+# Arctic: it is built from S'v, salinity anomaly times velocity; so its freshwater signs are flipped here). Heat
+# relative to 1.01 degC (TW-eq per gateway); freshwater relative to 34.67 (mSv-eq per gateway). Net row: ocean only.
+# Checked against the PDF (page 2037): Bering heat is -0 +- 10 TW-eq.
+gateway,volume_Sv,volume_std,heat_TW,heat_std,freshwater_mSv,freshwater_std
+davis,-2.1,0.7,37,9,-109,13
+fram,-1.1,1.2,63,17,-79,22
+bso,2.3,1.2,55,28,-15,12
+bering,0.7,0.7,0,10,48,52
+net_ocean,-0.15,0.06,154,44,-155,65
