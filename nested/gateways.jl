@@ -22,7 +22,15 @@ const gateway_lines = [
     ("bso",    [(16.5, 76.6), (19.0, 74.45), (20.6, 70.1)],  0.0),   # Sørkapp, Bjørnøya, Norway
     ("bering", [(-170.3, 66.2), (-167.6, 65.55)],            -1.9),  # Cape Dezhnev to Cape Prince of Wales
     ("davis",  [(-63.0, 66.6), (-52.5, 66.6)],               0.0),   # Baffin Island to Greenland
+    # Canadian Archipelago channels that feed Davis Strait (their sum ≈ Davis): positive into the Arctic, so outflow
+    # towards Baffin Bay is negative, as at Davis. Endpoints approximate; the setup log warns if an end is in water.
+    ("nares",  [(-69.5, 80.5), (-65.5, 80.5)],               0.0),   # Kennedy Channel, Ellesmere to Greenland
+    ("jones",  [(-81.0, 75.6), (-81.0, 76.6)],               0.0),   # Jones Sound, Devon to Ellesmere
+    ("barrow", [(-91.0, 73.6), (-91.0, 75.0)],               0.0),   # Barrow Strait, Somerset to Cornwallis/Devon
 ]
+
+# The four lines that close the Arctic (Shu et al. 2023); the Archipelago channels lie inside, upstream of Davis
+const arctic_gateways = ("fram", "bso", "bering", "davis")
 
 great_circle(λ₁, φ₁, λ₂, φ₂) = 2asind(sqrt(sind((φ₂ - φ₁) / 2)^2 + cosd(φ₁) * cosd(φ₂) * sind((λ₂ - λ₁) / 2)^2))
 
@@ -91,7 +99,7 @@ function section_transport(faces, Tʳᵉᶠ, u, v, T, S)
     return volume, heat, freshwater
 end
 
-# The four sections as staircases of faces on `grid` (a CPU grid)
+# The sections as staircases of faces on `grid` (a CPU grid)
 function gateway_sections(grid)
     Nx, Ny, Nz = size(grid)
     corner_λ = [λnode(i, j, 1, grid, Face(), Face(), Center()) for i in 1:Nx+1, j in 1:Ny+1]

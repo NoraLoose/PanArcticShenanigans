@@ -164,6 +164,24 @@ if !isnothing(tsubouchi)
     end
 end
 
+# Canadian Archipelago channels (if the run has them): 10-day means, model / GLORYS, and their sum against Davis
+caa = ("nares", "jones", "barrow")
+has(source, name) = !isnothing(source) && try source(name); true catch; false end
+if has(model, "nares_volume_Sv") || has(glorys, "nares_volume_Sv")
+    println("\nArchipelago channels, volume (Sv, positive into the Arctic), 10-day means, model / GLORYS:")
+    @printf("%-10s %15s %15s %15s %15s %15s\n", "days", caa..., "sum of three", "davis")
+    last_day = has(model, "nares_volume_Sv") ? maximum(days) + 1 : floor(Int, maximum(glorys("hour")) / 24) + 1
+    for a in 0:10:last_day - 1
+        b = min(a + 10, last_day)
+        M(g) = has(model, g * "_volume_Sv") ? (m = [a ≤ d < b for d in days]; any(m) ? mean(daily(model(g * "_volume_Sv"))[m]) : NaN) : NaN
+        G(g) = has(glorys, g * "_volume_Sv") ? (m = [a ≤ t / 24 < b for t in glorys("hour")]; any(m) ? mean(glorys(g * "_volume_Sv")[m]) : NaN) : NaN
+        cells = [@sprintf("%+6.2f/%+6.2f", M(g), G(g)) for g in caa]
+        push!(cells, @sprintf("%+6.2f/%+6.2f", sum(M, caa), sum(G, caa)))
+        push!(cells, @sprintf("%+6.2f/%+6.2f", M("davis"), G("davis")))
+        @printf("%-10s %15s %15s %15s %15s %15s\n", "$a–$b", cells...)
+    end
+end
+
 file = joinpath(folder, "gateways.png")
 save(file, fig)
 @info "Wrote $file"

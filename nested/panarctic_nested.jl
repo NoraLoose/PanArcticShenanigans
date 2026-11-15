@@ -12,7 +12,7 @@
 #   julia +1.13 --project=. panarctic_nested.jl [config file]   # default config.toml
 #
 # Hourly diagnostics go to the log and to <output_dir>/nested_monitor.csv; surface fields every 3 hours and η every
-# hour to <output_dir>/nested_surface.jld2 and nested_free_surface.jld2.
+# hour to <output_dir>/nested_surface.jld2 and nested_free_surface.jld2; with sea ice, daily h and ℵ to nested_ice.jld2.
 
 include("setup.jl")
 include("jra55_read_fix.jl")   # JRA55 reads for runs that do not start on 1 January
@@ -96,6 +96,12 @@ simulation.output_writers[:free_surface] = JLD2Writer(child, (; η = child.free_
                                                       overwrite_files = true)
 
 if coupled
+    # Daily sea-ice thickness and concentration (2-D), to see where thick ice builds up (e.g. in the Archipelago channels)
+    ice_fields = (; h = sea_ice.model.ice_thickness, ℵ = sea_ice.model.ice_concentration)
+    simulation.output_writers[:ice] = JLD2Writer(sea_ice.model, ice_fields; schedule = TimeInterval(24hours),
+                                                 filename = joinpath(output_dir, "nested_ice"),
+                                                 overwrite_files = true)
+
     function ice_progress(sim)
         h, ℵ = sea_ice.model.ice_thickness, sea_ice.model.ice_concentration
         @info @sprintf("         ice: max h %.2f m, mean ℵ %.3f", maximum(h), sum(interior(ℵ)) / length(interior(ℵ)))

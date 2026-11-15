@@ -1,4 +1,4 @@
-# GLORYS's daily-mean volume, heat and freshwater transport through the four gateways of gateways.jl, computed on
+# GLORYS's daily-mean volume, heat and freshwater transport through the gateway lines of gateways.jl, computed on
 # GLORYS's own 1/12° grid: no interpolation onto the model grid, no inpainting, GLORYS's own coastline and sea floor.
 # This is the reference for the model's gateways.csv (glorys_gateways_run.jl point-samples GLORYS onto the model grid,
 # which does not conserve transport at 1°; its numbers are not GLORYS's).
@@ -280,7 +280,7 @@ arctic_wet = wet_floor.(arctic_static.data[arctic_keep, :])
 
 wrap_i(I) = arctic_periodic ? mod1(I, NIa) : I
 blocked = Set{Tuple{Symbol, Int, Int}}()
-for (name, points, _) in vcat(gateway_lines, closure_lines)
+for (name, points, _) in vcat(filter(l -> l[1] in arctic_gateways, gateway_lines), closure_lines)
     for (kind, I, J, _) in lonlat_faces(lonlat_corner_path(arctic_corners, points))
         push!(blocked, (kind, wrap_i(I), J))
     end
@@ -345,6 +345,7 @@ end
 println()
 
 gateway_sum = Float64[]
+budget_lines = [g for (g, l) in enumerate(gateway_lines) if l[1] in arctic_gateways]   # the four, not the CAA channels
 fury_hecla  = Float64[]
 volume      = Float64[]
 
@@ -368,7 +369,7 @@ for (n, date) in enumerate(run_dates)
                      (:u_velocity, :v_velocity, :temperature, :salinity))
         Qᶜ += native_transport(b.box, b.faces, b.Tʳᵉᶠ, fields...)[1] / 1e6
     end
-    push!(gateway_sum, sum(rows[1][3g - 1] for g in 1:length(boxes)))
+    push!(gateway_sum, sum(rows[1][3g - 1] for g in budget_lines))
     push!(fury_hecla, Qᶜ)
     push!(volume, arctic_volume(date))
 
@@ -376,7 +377,7 @@ for (n, date) in enumerate(run_dates)
     for g in 1:length(boxes)
         @printf(" %+7.2f %+7.2f", rows[1][3g - 1], rows[2][3g - 1])
     end
-    @printf(" %+7.2f %+7.2f %+8.3f\n", gateway_sum[end], sum(rows[2][3g - 1] for g in 1:length(boxes)), Qᶜ)
+    @printf(" %+7.2f %+7.2f %+8.3f\n", gateway_sum[end], sum(rows[2][3g - 1] for g in budget_lines), Qᶜ)
 end
 println("\nvolume transport, Sv, positive into the Arctic; line = the gateway line, model = the model's staircase for it;")
 println("F&H = Fury and Hecla Strait (positive into the Arctic)")
