@@ -50,8 +50,13 @@ else
     regrid_bathymetry(cpu_grid; bathymetry_kw...)
 end
 
-grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(Array(interior(bottom_height, :, :, 1)));
-                            active_cells_map = true)
+# [grid] bottom = "partial" (default: partial cells) or "full" (whole cells; a test of the partial-cell bottom)
+bottom_kind = get(config["grid"], "bottom", "partial")
+bottom_kind in ("partial", "full") || error("[grid] bottom must be \"partial\" or \"full\", not \"$bottom_kind\"")
+Bottom = bottom_kind == "full" ? GridFittedBottom : PartialCellBottom
+grid = ImmersedBoundaryGrid(underlying_grid, Bottom(Array(interior(bottom_height, :, :, 1))); active_cells_map = true)
+@info "Bottom: $Bottom"
+
 
 # GLORYS daily means from start_date to one day past the end of the run
 start_date = DateTime(config["time"]["start_date"])
