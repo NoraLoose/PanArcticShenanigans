@@ -11,6 +11,8 @@
 #   glorys_gateways_modelline.csv  through the model's staircase for that line (its cell corners at this resolution),
 #                                  still on GLORYS's grid: the difference from the first file is what the model's
 #                                  placement of the line alone changes
+#   glorys_gateways_inout.csv      inflow and outflow separately, and glorys_section_<name>.csv, the mean section of
+#                                  normal velocity, T and S (as section_properties.jl writes for the model)
 #   glorys_arctic_budget.csv       GLORYS's Arctic volume budget: the four gateways plus Fury and Hecla Strait against
 #                                  the change in its sea level inside them (the closure check of the reference)
 # and prints a table per day plus the sum of the four.
@@ -199,6 +201,31 @@ function native_transport(box::GatewayBox, faces, Tʳᵉᶠ, u, v, T, S)
     return volume, heat, freshwater
 end
 
+# Each wet face and level: position (the face's centre), depth, thickness, width, normal velocity, T and S, as
+# section_records in section_properties.jl does on the model grid
+function native_records(box::GatewayBox, faces, u, v, T, S)
+    records = []
+    c  = box.corners
+    Nk = length(box.zf) - 1
+    for (kind, I, J, sgn) in faces
+        (a, b), L = face_geometry(box, kind, I, J)
+        (inside(u, a) && inside(u, b)) || continue
+        floor = min(box.deptho[a...], box.deptho[b...])
+        wet_floor(floor) || continue
+        λ, φ = kind === :v ? (c.λ₀ + (I - 1/2) * c.Δλ, c.φ₀ + (J - 1) * c.Δφ) : (c.λ₀ + (I - 1) * c.Δλ, c.φ₀ + (J - 1/2) * c.Δφ)
+        velocity = kind === :v ? v : u
+        for k in 1:Nk
+            box.zf[k] ≥ floor && break
+            Δz = min(box.zf[k + 1], floor) - box.zf[k]
+            va, vb = velocity[a..., k], velocity[b..., k]
+            (isfinite(va) && isfinite(vb)) || continue
+            push!(records, (; key = (kind, I, J, k), λ, φ, z = -(box.zf[k] + Δz / 2), Δz, width = L,
+                              velocity = sgn * (va + vb) / 2, T = (T[a..., k] + T[b..., k]) / 2, S = (S[a..., k] + S[b..., k]) / 2))
+        end
+    end
+    return records
+end
+
 # ## The model's staircase for each line, as (longitude, latitude) of its corners
 
 model_grid = on_architecture(CPU(), grid)
@@ -344,6 +371,11 @@ for _ in 1:length(boxes) + 1
 end
 println()
 
+include("section_properties_common.jl")
+inout_file = joinpath(output_dir, "glorys_gateways_inout.csv")
+open(io -> println(io, inout_header([b.name for b in boxes])), inout_file, "w")
+section_means = Dict(b.name => Dict() for b in boxes)
+
 gateway_sum = Float64[]
 budget_lines = [g for (g, l) in enumerate(gateway_lines) if l[1] in arctic_gateways]   # the four, not the CAA channels
 fury_hecla  = Float64[]
@@ -351,6 +383,7 @@ volume      = Float64[]
 
 for (n, date) in enumerate(run_dates)
     rows = (Float64[24 * (n - 1) + 12], Float64[24 * (n - 1) + 12])   # GLORYS daily means are centred at noon
+    inout_row = Float64[24 * (n - 1) + 12]
     for b in boxes
         uᴳ = read_variable(:u_velocity,  GLORYSDaily(), b.region; date).data
         vᴳ = read_variable(:v_velocity,  GLORYSDaily(), b.region; date).data
@@ -360,8 +393,12 @@ for (n, date) in enumerate(run_dates)
             Q, H, F = native_transport(b.box, faces, b.Tʳᵉᶠ, uᴳ, vᴳ, Tᴳ, Sᴳ)
             append!(row, (Q / 1e6, H / 1e12, F / 1e3))
         end
+        records = native_records(b.box, b.faces, uᴳ, vᴳ, Tᴳ, Sᴳ)
+        append!(inout_row, inflow_outflow(records, b.Tʳᵉᶠ))
+        accumulate_section!(section_means[b.name], records)
     end
     foreach(write_gateway_row, files, rows)
+    write_gateway_row(inout_file, inout_row)
 
     Qᶜ = 0.0
     for b in closure_boxes
@@ -382,6 +419,11 @@ end
 println("\nvolume transport, Sv, positive into the Arctic; line = the gateway line, model = the model's staircase for it;")
 println("F&H = Fury and Hecla Strait (positive into the Arctic)")
 @info "Wrote $(files[1]) and $(files[2])"
+line_start = Dict(name => points[1] for (name, points, _) in gateway_lines)
+for b in boxes
+    write_section(joinpath(output_dir, "glorys_section_$(b.name).csv"), line_start[b.name], section_means[b.name])
+end
+@info "Wrote $inout_file and glorys_section_<name>.csv"
 
 # ## The budget, between consecutive daily means (at midnight)
 
