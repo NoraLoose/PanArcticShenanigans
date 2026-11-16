@@ -10,6 +10,7 @@
 
 ENV["PANARCTIC_ARCHITECTURE"] = "CPU"
 include("setup.jl")
+include("jra55_read_fix.jl")
 
 using Oceananigans.Grids: inactive_node, λnode, φnode
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶜᶜᶜ
