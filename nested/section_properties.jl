@@ -5,8 +5,10 @@
 #
 # Writes in the run's output_dir:
 #   gateways_inout.csv     per average: volume (Sv), heat (TW) and freshwater (mSv) carried into the Arctic (inflow) and
-#                          out of it (outflow) through each gateway line of gateways.jl, references as in gateways.jl
-#   section_<name>.csv     the mean over the run, per face and level: distance along the line, position, depth,
+#                          out of it (outflow) through each gateway line of gateways.jl, references as in gateways.jl;
+#                          inflow and outflow are decided per 30 km stretch of the line and level (binned, in
+#                          section_properties_common.jl), not per face
+#   section_<name>.csv     the mean over the run, per 30 km stretch and level: distance along the line, position, depth,
 #                          thickness, width, normal velocity (positive into the Arctic), T, S
 # glorys_gateways_native.jl writes the same for GLORYS on its own grid (glorys_gateways_inout.csv,
 # glorys_section_<name>.csv); plot_sections.jl compares the two.
@@ -56,9 +58,9 @@ for n in eachindex(Tₜ.times)
     row = Float64[hour]
     u, v, T, S = uₜ[n], vₜ[n], Tₜ[n], Sₜ[n]
     for s in sections
-        records = section_records(s, u, v, T, S)
-        append!(row, inflow_outflow(records, s.Tʳᵉᶠ))
-        accumulate_section!(means[s.name], records)
+        bins = binned(section_records(s, u, v, T, S), line_start[s.name], s.Tʳᵉᶠ)
+        append!(row, inflow_outflow(bins))
+        accumulate_section!(means[s.name], bins)
     end
     write_gateway_row(inout_file, row)
     @info @sprintf("hour %6.1f: ", hour) *
@@ -66,6 +68,6 @@ for n in eachindex(Tₜ.times)
 end
 
 for s in sections
-    write_section(joinpath(output_dir, "section_$(s.name).csv"), line_start[s.name], means[s.name])
+    write_section(joinpath(output_dir, "section_$(s.name).csv"), means[s.name])
 end
 @info "Wrote $inout_file and section_<name>.csv for $(join((s.name for s in sections), ", "))"

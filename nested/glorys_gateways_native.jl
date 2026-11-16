@@ -375,6 +375,7 @@ include("section_properties_common.jl")
 inout_file = joinpath(output_dir, "glorys_gateways_inout.csv")
 open(io -> println(io, inout_header([b.name for b in boxes])), inout_file, "w")
 section_means = Dict(b.name => Dict() for b in boxes)
+line_start = Dict(name => points[1] for (name, points, _) in gateway_lines)
 
 gateway_sum = Float64[]
 budget_lines = [g for (g, l) in enumerate(gateway_lines) if l[1] in arctic_gateways]   # the four, not the CAA channels
@@ -393,9 +394,9 @@ for (n, date) in enumerate(run_dates)
             Q, H, F = native_transport(b.box, faces, b.Tʳᵉᶠ, uᴳ, vᴳ, Tᴳ, Sᴳ)
             append!(row, (Q / 1e6, H / 1e12, F / 1e3))
         end
-        records = native_records(b.box, b.faces, uᴳ, vᴳ, Tᴳ, Sᴳ)
-        append!(inout_row, inflow_outflow(records, b.Tʳᵉᶠ))
-        accumulate_section!(section_means[b.name], records)
+        bins = binned(native_records(b.box, b.faces, uᴳ, vᴳ, Tᴳ, Sᴳ), line_start[b.name], b.Tʳᵉᶠ)
+        append!(inout_row, inflow_outflow(bins))
+        accumulate_section!(section_means[b.name], bins)
     end
     foreach(write_gateway_row, files, rows)
     write_gateway_row(inout_file, inout_row)
@@ -419,9 +420,8 @@ end
 println("\nvolume transport, Sv, positive into the Arctic; line = the gateway line, model = the model's staircase for it;")
 println("F&H = Fury and Hecla Strait (positive into the Arctic)")
 @info "Wrote $(files[1]) and $(files[2])"
-line_start = Dict(name => points[1] for (name, points, _) in gateway_lines)
 for b in boxes
-    write_section(joinpath(output_dir, "glorys_section_$(b.name).csv"), line_start[b.name], section_means[b.name])
+    write_section(joinpath(output_dir, "glorys_section_$(b.name).csv"), section_means[b.name])
 end
 @info "Wrote $inout_file and glorys_section_<name>.csv"
 
