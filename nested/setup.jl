@@ -41,11 +41,14 @@ underlying_grid = ConformalConicGrid(arch;
 Nx, Ny = size(underlying_grid)[1:2]
 @info "Grid: $Nx × $Ny × $Nz, largest spacing $(spacing / 1e3) km"
 
-# Regridded on a CPU copy of the grid, as in setup.jl; the result is cached
+# Regridded on a CPU copy of the grid, as in setup.jl; ETOPO and GEBCO results are cached, GLORYS's are recomputed
 bathymetry_kw = (; minimum_depth = 15, interpolation_passes = 2, major_basins = 1)
 cpu_grid = on_architecture(CPU(), underlying_grid)
+include("glorys_bathymetry.jl")
 bottom_height = if config["grid"]["bathymetry"] == "GEBCO2026"
     regrid_bathymetry(cpu_grid, Metadatum(:bottom_height; dataset = GEBCO2026(), dir_kw...); bathymetry_kw...)
+elseif config["grid"]["bathymetry"] == "GLORYS"
+    glorys_bottom_height(cpu_grid; bathymetry_kw...)
 else
     regrid_bathymetry(cpu_grid; bathymetry_kw...)
 end
