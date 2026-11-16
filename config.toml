@@ -14,8 +14,8 @@ Nz         = 20     # vertical levels
 depth      = 5000   # maximum depth (m)
 
 [time]
-start_date = 1993-01-01   # initial condition (GLORYS); the run starts at noon on this date
-end_date   = 1993-01-06   # the run ends at noon on this date; for short tests a date and time, e.g. 1993-01-01T15:00
+start_date = 1993-01-01   # initial condition (GLORYS); the run starts at 00:00 on this date
+end_date   = 1993-01-06   # the run ends at 00:00 on this date; for short tests a date and time, e.g. 1993-01-01T03:00
 dt_minutes = 10           # time step
 
 [atmosphere]
@@ -32,8 +32,8 @@ output_dir = "output"    # model output: time averages (.jld2) and checkpoints
 figure_dir = "figures"   # figures and movies from the plotting/ scripts
 
 [boundaries]
-velocity_inflow_days      = 1    # oblique radiation on u, v: nudging timescale toward GLORYS on inflow
-tracer_inflow_km_atlantic = 20   # T, S reservoir inflow relaxation length; Atlantic side
-tracer_inflow_km_pacific  = 20   # T, S reservoir inflow relaxation length; Pacific side
-sponge = false                # GLORYS restoring in a rim along the open edges; keep off in normal use, potentially useful for debugging
+velocity_inflow_days = 1   # oblique radiation on u, v: nudging timescale toward GLORYS on inflow
+tracer_inflow_km     = 20  # T, S reservoir inflow relaxation length, both open sides
+relaxation_hours     = 0   # T, S and baroclinic u, v relax toward GLORYS in a ~2/3° band along the open sides
+                           # over this timescale; 0 = off (nested_ocean_model's default is 6)
 
