@@ -1,0 +1,45 @@
+# Production settings from 15 November 2026: September–October 2005, 15 km, 20 levels, partial bottom cells with the
+# mass-consistent bottom advection fix (Oceananigans PR #6533; here as a run-time override), volume following GLORYS,
+# pressure off, sea ice. Daily averages of the 3-D T, S, u, v (about 8 GB for 61 days) for the gateway sections
+# (heat and freshwater through the BSO and Fram) and the Atlantic Water layer.
+#
+# Load the fix in the REPL first, wet cells only (the version in PR #6533):
+#
+#   include("../../panarctic-tools/sandbox/lake_at_rest/thickness_jump_fixes.jl")   # path from nested/
+#   set_momentum_fix!("hybrid"); set_jump_walls!(false)
+#   empty!(ARGS); push!(ARGS, "runs/tsubouchi-2005-15km-partial-hybridwet-2mo.toml"); include("panarctic_nested.jl")
+#
+# Run from the nested/ folder:  julia +1.13 --project=. panarctic_nested.jl [config file]
+
+architecture = "GPU"   # "GPU" or "CPU"
+
+[grid]
+spacing_km = 15
+Nz         = 20
+depth      = 5000        # m
+bathymetry = "ETOPO"
+bottom     = "partial"
+
+[time]
+start_date = 2005-09-01
+days       = 61
+dt_minutes = 10
+
+[boundaries]
+zero_net_inflow = false
+net_inflow_control = false
+follow_glorys_volume = true
+volume_relaxation_days = 1
+follow_glorys_tendency = false
+net_inflow_depth_exponent = 0.5
+
+[coupling]
+coupled  = true
+pressure = false
+
+[output]
+ocean_3d_days = 1        # daily averages of the 3-D T, S, u, v
+
+[paths]
+data_dir   = ""
+output_dir = "output-tsubouchi-2005-15km-partial-hybridwet-2mo"

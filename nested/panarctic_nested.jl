@@ -12,7 +12,8 @@
 #   julia +1.13 --project=. panarctic_nested.jl [config file]   # default config.toml
 #
 # Hourly diagnostics go to the log and to <output_dir>/nested_monitor.csv; surface fields every 3 hours and η every
-# hour to <output_dir>/nested_surface.jld2 and nested_free_surface.jld2; with sea ice, daily h and ℵ to nested_ice.jld2.
+# hour to <output_dir>/nested_surface.jld2 and nested_free_surface.jld2; with sea ice, daily h and ℵ to nested_ice.jld2;
+# with [output] ocean_3d_days, averages of the 3-D T, S, u, v to nested_ocean_3d.jld2.
 
 include("setup.jl")
 include("jra55_read_fix.jl")   # JRA55 reads for runs that do not start on 1 January
@@ -94,6 +95,17 @@ simulation.output_writers[:free_surface] = JLD2Writer(child, (; η = child.free_
                                                       schedule = TimeInterval(1hours),
                                                       filename = joinpath(output_dir, "nested_free_surface"),
                                                       overwrite_files = true)
+
+# [output] ocean_3d_days: averages of the 3-D T, S, u, v over that many days in nested_ocean_3d.jld2 (absent or 0: none).
+# About 130 MB per average at 15 km and 20 levels.
+ocean_3d_days = get(get(config, "output", Dict()), "ocean_3d_days", 0)
+if ocean_3d_days > 0
+    ocean_3d = (; T = child.tracers.T, S = child.tracers.S, u = child.velocities.u, v = child.velocities.v)
+    simulation.output_writers[:ocean_3d] = JLD2Writer(child, ocean_3d;
+                                                      schedule = AveragedTimeInterval(ocean_3d_days * Oceananigans.Units.day),
+                                                      filename = joinpath(output_dir, "nested_ocean_3d"),
+                                                      overwrite_files = true)
+end
 
 if coupled
     # Daily sea-ice thickness and concentration (2-D), to see where thick ice builds up (e.g. in the Archipelago channels)
