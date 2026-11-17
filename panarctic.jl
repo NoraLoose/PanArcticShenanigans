@@ -164,12 +164,13 @@ simulation.output_writers[:sea_ice] = JLD2Writer(sea_ice.model, sea_ice_outputs;
 # averaged over the same interval, so they include the covariance of velocity and tracers within each average, which
 # transports computed offline from the averaged fields (analysis/transports.jl) miss.
 if get(transport_settings(config), "online", false)
-    sections = vcat(gateway_sections(grid, config), boundary_sections(grid))
+    # On the child's grid, which the model runs on (Open sides, bathymetry blended toward GLORYS near them)
+    sections = vcat(gateway_sections(child.grid, config), boundary_sections(child.grid))
     ρ₀, cₚ = reference_density(ocean), heat_capacity(ocean)
-    transports = section_transports(grid, u, v, ocean.model.tracers.T, ocean.model.tracers.S, sections;
+    transports = section_transports(child.grid, u, v, child.tracers.T, child.tracers.S, sections;
                                     reference_values(config)..., reference_density = ρ₀, heat_capacity = cₚ)
 
-    simulation.output_writers[:transports] = JLD2Writer(ocean.model, transports;
+    simulation.output_writers[:transports] = JLD2Writer(child, transports;
                                                         filename = transport_output_file,
                                                         schedule = AveragedTimeInterval(output["average_hours"] * hours),
                                                         init = (file, model) -> save_transport_metadata!(file, config, sections;

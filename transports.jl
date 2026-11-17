@@ -134,7 +134,7 @@ function gateway_sections(grid, config)
         for (λ, φ) in ((first(lons), first(lats)), (last(lons), last(lats)))
             i, j = Tuple(argmax(dot3.(x, Ref(unit_vector(λ, φ)))))   # nearest cell centre
             inactive_node(i, j, Nz, cpu_grid, ccc...) ||
-                @warn "Section $name ends in the ocean at ($λ°E, $φ°N), cell ($i, $j): move the waypoint onto land."
+                @warn "Section $name ends in the ocean at ($(λ)°E, $(φ)°N), cell ($i, $j): move the waypoint onto land."
         end
 
         @info @sprintf("Section %s: %d open faces at the surface (%d u, %d v), deepest %.0f m",
