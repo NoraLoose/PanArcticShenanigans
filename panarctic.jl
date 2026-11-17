@@ -3,6 +3,7 @@
 # Figures and movies: scripts in plotting/ (one per figure).
 
 include("setup.jl")
+include("jra55_read_fix.jl")
 include("transports.jl")
 include("volume_control.jl")
 include("monitor.jl")
@@ -45,6 +46,7 @@ ocean = nested_ocean_simulation(grid, dataset;
                                 tracer_scheme = TracerReservoir(inflow_length_scale = bc["tracer_inflow_km"] * kilometers),
                                 relaxation_rate = bc["relaxation_hours"] > 0 ? 1 / (bc["relaxation_hours"] * hours) : nothing,
                                 net_inflow, net_inflow_depth_exponent,
+                                inverse_barometer = get(config["atmosphere"], "inverse_barometer", false),
                                 free_surface = SplitExplicitFreeSurface(grid; cfl = 0.7, fixed_Δt = Δt),
                                 momentum_advection = WENOVectorInvariant(; order=5, time_discretization),
                                 tracer_advection = WENO(; order=7, time_discretization, minimum_buffer_upwind_order=1),
