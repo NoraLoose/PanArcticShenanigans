@@ -36,8 +36,11 @@ reference_salinity    = 34.8   # freshwater transport relative to this salinity 
 # walking from the first waypoint to the last; these are ordered so that positive is into the Arctic. Both ends should
 # be on land, so the section spans the whole strait on any grid. Check with plotting/transport_sections.jl.
 [transports.sections]
-fram_strait         = { lon = [15.0, -20.0],    lat = [79.0, 79.0] }
-barents_sea_opening = { lon = [26.5, 15.5],     lat = [69.5, 77.9] }
+# Fram Strait follows the mooring array at 78°50′N; intermediate waypoints keep the great circles on that latitude.
+fram_strait         = { lon = [15.0, 10.0, 5.0, 0.0, -5.0, -10.0, -15.0, -20.0],
+                        lat = [78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333] }
+# Barents Sea Opening follows the mooring line from Norway (Fugløya) via Bjørnøya to Sørkapp, Svalbard.
+barents_sea_opening = { lon = [20.0, 19.0, 16.5],  lat = [70.0, 74.45, 77.0] }
 bering_strait       = { lon = [-166.0, -171.0], lat = [66.0, 66.0] }
 davis_strait        = { lon = [-53.0, -63.0],   lat = [67.0, 66.5] }
 
