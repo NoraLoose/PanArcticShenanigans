@@ -5,6 +5,10 @@
 include("setup.jl")
 include("transports.jl")
 
+# Keep the config of this run with its output (replacing that of an earlier run of the same experiment)
+isfile(run_config_file) && samefile(config_file, run_config_file) || cp(config_file, run_config_file; force = true)
+@info "Experiment \"$experiment\": output in $output_dir, config copied to $run_config_file"
+
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir
 using Oceananigans.ImmersedBoundaries: immersed_inactive_node
 using Printf
