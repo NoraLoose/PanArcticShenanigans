@@ -5,6 +5,7 @@
 include("setup.jl")
 include("transports.jl")
 include("volume_control.jl")
+include("monitor.jl")
 
 # Keep the config of this run with its output (replacing that of an earlier run of the same experiment)
 isfile(run_config_file) && samefile(config_file, run_config_file) || cp(config_file, run_config_file; force = true)
@@ -141,12 +142,21 @@ function ice_progress(sim)
 end
 add_callback!(simulation, ice_progress, TimeInterval(1hours))
 
+# GLORYS's free surface over the whole domain (2D, small), for the volume control and the monitor; the run itself
+# holds GLORYS only on strips along the open sides
+monitor_hours = get(config["output"], "monitor_hours", 0)
+if net_inflow isa Ref || monitor_hours > 0
+    parent_η = parent_free_surface(grid, dataset, (start_date, end_date + Day(1)); dir_kw...)
+end
+
 # The net inflow follows GLORYS's domain-mean η: set before every time step (volume_control.jl)
 if net_inflow isa Ref
-    parent_η = parent_free_surface(grid, dataset, (start_date, end_date + Day(1)); dir_kw...)
     add_glorys_volume_target!(simulation, net_inflow, child, parent_η, bc["volume_relaxation_days"] * days;
                               tendency = get(bc, "follow_glorys_tendency", false))
 end
+
+# Transports through the open sides, mean η against GLORYS's, the volume budget and the fastest point (monitor.jl)
+monitor_hours > 0 && add_monitor!(simulation, child, output_dir, parent_η; schedule = TimeInterval(monitor_hours * hours))
 
 # ## Output: time averages and checkpoints
 #
