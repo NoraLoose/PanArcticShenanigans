@@ -1836,8 +1836,8 @@ version = "1.3.0"
 
 [[deps.NumericalEarth]]
 deps = ["Accessors", "Adapt", "CFTime", "ClimaSeaIce", "CodecZlib", "CubedSphere", "DataDeps", "Dates", "Distances", "DocStringExtensions", "Downloads", "GPUArraysCore", "Glob", "ImageMorphology", "JLD2", "KernelAbstractions", "LibCURL", "MeshArrays", "NCDatasets", "NetworkOptions", "Oceananigans", "OffsetArrays", "PrecompileTools", "Printf", "Scratch", "SeawaterPolynomials", "StaticArrays", "Statistics", "Tar", "Thermodynamics", "ZipFile"]
-git-tree-sha1 = "67b7f9cc61d3107fe60dd95999587fc786a6450a"
-repo-rev = "ss/nested-ocean-model"
+git-tree-sha1 = "1b44457f999c33791fb818415de2003840959715"
+repo-rev = "fjp/net-inflow"
 repo-url = "https://github.com/NumericalEarth/NumericalEarth.jl"
 uuid = "904d977b-046a-4731-8b86-9235c0d1ef02"
 version = "0.9.2"
@@ -1887,8 +1887,9 @@ version = "0.5.5"
 
 [[deps.Oceananigans]]
 deps = ["Adapt", "BFloat16s", "Crayons", "CubedSphere", "Dates", "Distances", "DocStringExtensions", "FFTW", "GPUArraysCore", "Glob", "InteractiveUtils", "JLD2", "KernelAbstractions", "Krylov", "LinearAlgebra", "Logging", "MPI", "MuladdMacro", "OffsetArrays", "OrderedCollections", "Printf", "ReactantCore", "Rotations", "SeawaterPolynomials", "SparseArrays", "StaticArrays", "Statistics", "StructArrays"]
-git-tree-sha1 = "10751f2a96272e0caa66b342c2990b9885f4a21b"
-registries = "General"
+git-tree-sha1 = "4b1d1e6ed16fd4a037c56a0fd5db15e8a6bd3340"
+repo-rev = "fjp/net-inflow-target"
+repo-url = "https://github.com/CliMA/Oceananigans.jl"
 uuid = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 version = "0.117.2"
 
