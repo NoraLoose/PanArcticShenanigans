@@ -4,6 +4,9 @@
 
 include("setup.jl")
 include("jra55_read_fix.jl")
+
+# Mass-consistent momentum advection at partial bottom cells (Oceananigans.jl#6533), before the model is built
+get(config["grid"], "partial_cell_fix", false) && grid.immersed_boundary isa PartialCellBottom && include("partial_cell_fix.jl")
 include("transports.jl")
 include("volume_control.jl")
 include("monitor.jl")

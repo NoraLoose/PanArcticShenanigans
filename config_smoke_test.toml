@@ -15,6 +15,10 @@ experiment   = "smoke_test"  # name of the run: output and figures go to output_
 spacing_km = 100    # largest horizontal grid spacing [km] (at the pole; ~15% finer near the Atlantic edge)
 Nz         = 20     # vertical levels
 depth      = 5000   # maximum depth (m)
+bathymetry       = "GEBCO2026"   # "GEBCO2026" (15″, with IBCAO), "ETOPO" (ETOPO 2022, 60″) or "GLORYS" (GLORYS's own sea floor)
+bottom           = "partial"     # "partial": bottom cells cut at the sea floor; "full": whole cells
+partial_cell_fix = true          # with partial cells: flux-form momentum advection at bottom-cell thickness jumps
+                                 # (Oceananigans.jl#6533), which removes the bottom jets of issue #6532
 
 [time]
 start_date = 1993-01-01   # initial condition (GLORYS); the run starts at 00:00 on this date
