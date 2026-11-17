@@ -15,8 +15,8 @@ Nz         = 20     # vertical levels
 depth      = 5000   # maximum depth (m)
 
 [time]
-start_date = 1993-01-01   # initial condition (GLORYS); the run starts at noon on this date
-end_date   = 1993-01-06   # the run ends at noon on this date; for short tests a date and time, e.g. 1993-01-01T15:00
+start_date = 1993-01-01   # initial condition (GLORYS); the run starts at 00:00 on this date
+end_date   = 1993-01-06   # the run ends at 00:00 on this date; for short tests a date and time, e.g. 1993-01-01T03:00
 dt_minutes = 10           # time step
 
 [atmosphere]
@@ -27,14 +27,32 @@ average_hours   = 24      # time-averaged output (3D ocean, free surface, sea ic
 checkpoint_days = 30      # how often the full model state is saved for restarts
 restart         = false   # true: continue from the latest checkpoint in output_dir
 
+[transports]
+# Volume, heat, salt and freshwater transports through the sections below and the open boundaries (see transports.jl).
+online                = true   # true: computed every time step and averaged over average_hours, written to arctic_transports.jld2
+reference_temperature = 0      # heat transport relative to this temperature (°C)
+reference_salinity    = 34.8   # freshwater transport relative to this salinity (g/kg)
+
+# Each section is a great-circle path through (longitude, latitude) waypoints. Positive transport flows to the right,
+# walking from the first waypoint to the last; these are ordered so that positive is into the Arctic. Both ends should
+# be on land, so the section spans the whole strait on any grid. Check with plotting/transport_sections.jl.
+[transports.sections]
+# Fram Strait follows the mooring array at 78°50′N; intermediate waypoints keep the great circles on that latitude.
+fram_strait         = { lon = [15.0, 10.0, 5.0, 0.0, -5.0, -10.0, -15.0, -20.0],
+                        lat = [78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333] }
+# Barents Sea Opening follows the mooring line from Norway (Fugløya) via Bjørnøya to Sørkapp, Svalbard.
+barents_sea_opening = { lon = [20.0, 19.0, 16.5],  lat = [70.0, 74.45, 77.0] }
+bering_strait       = { lon = [-166.0, -171.0], lat = [66.0, 66.0] }
+davis_strait        = { lon = [-53.0, -63.0],   lat = [67.0, 66.5] }
+
 [paths]
 data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
 output_dir = "output"    # model output: time averages (.jld2), checkpoints and the config; one folder per experiment
 figure_dir = "figures"   # figures and movies from the plotting/ scripts; one folder per experiment
 
 [boundaries]
-velocity_inflow_days      = 1    # oblique radiation on u, v: nudging timescale toward GLORYS on inflow
-tracer_inflow_km_atlantic = 20   # T, S reservoir inflow relaxation length; Atlantic side
-tracer_inflow_km_pacific  = 20   # T, S reservoir inflow relaxation length; Pacific side
-sponge = false                # GLORYS restoring in a rim along the open edges; keep off in normal use, potentially useful for debugging
+velocity_inflow_days = 1   # oblique radiation on u, v: nudging timescale toward GLORYS on inflow
+tracer_inflow_km     = 20  # T, S reservoir inflow relaxation length, both open sides
+relaxation_hours     = 0   # T, S and baroclinic u, v relax toward GLORYS in a ~2/3° band along the open sides
+                           # over this timescale; 0 = off (nested_ocean_model's default is 6)
 

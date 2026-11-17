@@ -27,13 +27,30 @@ cp config.toml config_myname.toml   # edit as needed
 julia +1.13 --project=. panarctic.jl config_myname.toml
 ```
 
-The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk with space. For a quick check, set `end_date = 1993-01-01T15:00` (3 hours).
+The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk with space. For a quick check, set `end_date = 1993-01-01T03:00` (3 hours).
 
 The first run is slow: it downloads the data and fills gaps in GLORYS (cached afterwards). Later runs start in a few minutes.
+
+The ocean and sea ice are nested in GLORYS with NumericalEarth's `nested_ocean_simulation` and `nested_sea_ice_simulation` ([NumericalEarth.jl#676](https://github.com/NumericalEarth/NumericalEarth.jl/pull/676), not yet released; `Project.toml` pins its branch). They read GLORYS along the open Atlantic and Pacific edges, set the open boundary conditions, and start the run from GLORYS on `start_date`.
 
 Each run has an experiment name (`experiment` in the config). Its output goes to `output_dir/<experiment>/` (default `output/test/`, relative to where you run), together with a copy of the config file that ran it (`config.toml`, replaced by each run of the experiment): time averages (daily by default) of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean.jld2`, `arctic_sea_ice.jld2`), and checkpoints of the full model state (`arctic_checkpoint*.jld2`). The averaging and checkpoint intervals are set in `[output]` in the config.
 
 To continue a run from its latest checkpoint, set `restart = true` and run again with the same experiment name. The run still ends at `end_date`.
+
+## Transports
+
+Volume, heat, salt and freshwater transports through Fram Strait, the Barents Sea Opening, Bering Strait and Davis Strait (Sv, TW, kg/s, Sv; positive into the Arctic), and through the two open boundaries (`atlantic_boundary`, `pacific_boundary`; positive into the domain). The sections are defined in `[transports]` in the config as longitude/latitude waypoints, so they don't depend on the grid: the faces they cross are found on whatever grid the run uses. Both ends of a section should be on land; a warning says when one isn't. Heat and freshwater are relative to `reference_temperature` and `reference_salinity`.
+
+- **Online** (`online = true`, the default): computed every time step and averaged like the rest of the output, written to `arctic_transports.jld2` in `output_dir/<experiment>/`. These include the covariance of velocity and T, S within each average.
+- **Offline**, from the time-averaged output of a run, on the CPU:
+
+  ```bash
+  julia +1.13 --project=. analysis/transports.jl [config.toml]   # arctic_transports_offline.jld2
+  ```
+
+  Uses the grid saved with the output. Being computed from averaged u, v, T, S, these miss the covariance within each average.
+
+To check the sections on the grid (e.g. after changing the grid or a section), plot their faces on the bathymetry with `plotting/transport_sections.jl`.
 
 ## Figures and movies
 
@@ -44,6 +61,7 @@ julia +1.13 --project=. plotting/bathymetry.jl          [config.toml]   # bathym
 julia +1.13 --project=. plotting/grid_spacing.jl        [config.toml]   # grid_spacing.png
 julia +1.13 --project=. plotting/glorys_free_surface.jl [config.toml]   # arctic_free_surface.mp4 (GLORYS boundary data)
 julia +1.13 --project=. plotting/surface_movie.jl       [config.toml]   # arctic_sea.mp4 (SST, SSS, surface speed, ice volume) from the time-averaged output
+julia +1.13 --project=. plotting/transport_sections.jl  [config.toml]   # transport_sections.png, transport_section_faces.png (the transport sections on the bathymetry)
 ```
 
-`surface_movie.jl` only reads the output files and doesn't need a GPU. The other three build the grid (and `glorys_free_surface.jl` reads the GLORYS data), so run them where `panarctic.jl` runs.
+`surface_movie.jl` only reads the output files and doesn't need a GPU. The others build the grid (and `glorys_free_surface.jl` reads the GLORYS data), so run them where `panarctic.jl` runs.
