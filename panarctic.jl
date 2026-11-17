@@ -4,6 +4,7 @@
 
 include("setup.jl")
 include("transports.jl")
+include("volume_control.jl")
 
 # Keep the config of this run with its output (replacing that of an earlier run of the same experiment)
 isfile(run_config_file) && samefile(config_file, run_config_file) || cp(config_file, run_config_file; force = true)
@@ -23,11 +24,16 @@ using NumericalEarth.EarthSystemModels: reference_density, heat_capacity
 # the tangential component. Tracers: reservoirs (as in MOM6) that relax toward GLORYS over a length scale on
 # inflow. Barotropic transport: Flather. Near the open sides, the bathymetry is blended toward GLORYS's
 # seafloor, and T, S and the baroclinic velocities can relax toward GLORYS in a band (relaxation_hours).
+# The net inflow through the two open sides together is pinned (volume_control.jl): by default it follows GLORYS's
+# domain-mean η.
 # The child grid is a copy of `grid` with Open sides and the blended bathymetry: use child.grid below.
 
 bc = config["boundaries"]
 Δt = config["time"]["dt_minutes"] * minutes
 time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)
+net_inflow = net_inflow_setting(bc)
+net_inflow_depth_exponent = get(bc, "net_inflow_depth_exponent", 0)
+@info "Open boundaries: net inflow $(net_inflow isa Ref ? "follows GLORYS's volume" : something(net_inflow, "free (Flather only)")) (m³/s), pin ∝ H^$net_inflow_depth_exponent"
 
 ocean = nested_ocean_simulation(grid, dataset;
                                 dates = (start_date, end_date),
@@ -37,6 +43,7 @@ ocean = nested_ocean_simulation(grid, dataset;
                                 normal_velocity_scheme = ObliqueRadiation(inflow_timescale = bc["velocity_inflow_days"] * days),
                                 tracer_scheme = TracerReservoir(inflow_length_scale = bc["tracer_inflow_km"] * kilometers),
                                 relaxation_rate = bc["relaxation_hours"] > 0 ? 1 / (bc["relaxation_hours"] * hours) : nothing,
+                                net_inflow, net_inflow_depth_exponent,
                                 free_surface = SplitExplicitFreeSurface(grid; cfl = 0.7, fixed_Δt = Δt),
                                 momentum_advection = WENOVectorInvariant(; order=5, time_discretization),
                                 tracer_advection = WENO(; order=7, time_discretization, minimum_buffer_upwind_order=1),
@@ -133,6 +140,13 @@ function ice_progress(sim)
     return nothing
 end
 add_callback!(simulation, ice_progress, TimeInterval(1hours))
+
+# The net inflow follows GLORYS's domain-mean η: set before every time step (volume_control.jl)
+if net_inflow isa Ref
+    parent_η = parent_free_surface(grid, dataset, (start_date, end_date + Day(1)); dir_kw...)
+    add_glorys_volume_target!(simulation, net_inflow, child, parent_η, bc["volume_relaxation_days"] * days;
+                              tendency = get(bc, "follow_glorys_tendency", false))
+end
 
 # ## Output: time averages and checkpoints
 #

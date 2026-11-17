@@ -56,3 +56,12 @@ tracer_inflow_km     = 20  # T, S reservoir inflow relaxation length, both open 
 relaxation_hours     = 0   # T, S and baroclinic u, v relax toward GLORYS in a ~2/3° band along the open sides
                            # over this timescale; 0 = off (nested_ocean_model's default is 6)
 
+# Volume control (volume_control.jl): the net inflow through the two open sides together is pinned at every barotropic
+# substep, as NEMO and ROMS do; Flather splits it between the sides. Without it the domain's volume drifts from GLORYS's.
+follow_glorys_volume      = true   # true: the net inflow follows GLORYS's domain-mean η, with the surface freshwater handed back
+volume_relaxation_days    = 1      # with follow_glorys_volume: time over which the remaining drift from GLORYS's mean η is removed
+follow_glorys_tendency    = false  # with follow_glorys_volume: true also follows GLORYS's rate of change exactly
+# net_inflow_Sv           = 0.0    # with follow_glorys_volume = false: a constant net inflow instead (Sv, positive into the domain);
+                                   # with neither, Flather alone (no volume control)
+net_inflow_depth_exponent = 0.5    # the pin's correction to each boundary column ∝ Hᵖ: 0 uniform per length, 1 uniform velocity
+                                   # (NEMO, ROMS), 0.5 a uniform shift of GLORYS's η in Flather
