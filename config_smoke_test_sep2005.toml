@@ -70,7 +70,7 @@ velocity_inflow_days = 0.0417   # oblique radiation on u, v: nudging timescale t
                                 # With 1 day, a partial bottom cell on the Atlantic open face drifted to −0.9 m/s
                                 # (GLORYS −0.26); 1 hour removes it and moves the section transports by < 0.1 Sv
 tracer_inflow_km     = 20  # T, S reservoir inflow relaxation length, both open sides
-relaxation_hours     = 0   # T, S and baroclinic u, v relax toward GLORYS in a ~2/3° band along the open sides
+relaxation_hours     = 6   # T, S and baroclinic u, v relax toward GLORYS in a ~2/3° band along the open sides
                            # over this timescale; 0 = off (nested_ocean_model's default is 6)
 
 # Volume control (volume_control.jl): the net inflow through the two open sides together is pinned at every barotropic
