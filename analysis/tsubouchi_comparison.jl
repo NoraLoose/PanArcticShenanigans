@@ -15,9 +15,9 @@
 #
 # Heat and freshwater per gateway depend on the reference values (the net over a closed boundary does not), so they are
 # converted. With the volume Q, our heat H (relative to T₀) and our freshwater F (relative to S₀):
-#     heat relative to 1.01 °C       = H - ρ cₚ (1.01 - T₀) Q
-#     freshwater relative to 34.67   = Q - (S₀ / 34.67) (Q - F)          (since F = Q - Σ vS / S₀)
-# Tsubouchi et al.'s heat reference is the monthly boundary-mean temperature, 1.01 ± 0.16 °C; the constant 1.01 is used.
+#     heat relative to T′       = H - ρ cₚ (T′ - T₀) Q
+#     freshwater relative to S′ = Q - (S₀ / S′) (Q - F)          (since F = Q - Σ vS / S₀)
+# T′ and S′ are Tsubouchi et al.'s monthly boundary-mean potential temperature and salinity (Section 2d), one per block.
 #
 # Tsubouchi et al.'s monthly values (analysis/references/tsubouchi2018_monthly_*.csv) are read from their Figs. 5a, 7a
 # and 9a: about ±0.2 Sv, ±5 TW, ±5 mSv, drawn as bands. Their "months" are 30-day blocks from 5 September 2005 (the
