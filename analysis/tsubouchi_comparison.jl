@@ -104,7 +104,8 @@ ours(values, name, quantity) = values["$(name)_$quantity"]
 function theirs(values, t, name, quantity)
     Q = values["$(name)_volume"]
     quantity == "volume" && return Q
-    quantity == "heat"   && return values["$(name)_heat"] .- reference.ρcₚ * (T_tsubouchi - reference.T₀) .* Q .* 1e6 ./ 1e12
+    b = clamp.(searchsortedlast.(Ref(block_first), t), 1, length(block_first))   # Tsubouchi et al.'s block at each time
+    quantity == "heat" && return values["$(name)_heat"] .- reference.ρcₚ .* (T_tsubouchi[b] .- reference.T₀) .* Q .* 1e6 ./ 1e12
     F = values["$(name)_freshwater"]
     return 1000 .* (Q .- (reference.S₀ / S_tsubouchi) .* (Q .- F))
 end
