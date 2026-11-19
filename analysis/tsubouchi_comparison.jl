@@ -43,8 +43,10 @@ isempty(gateways) && error("None of davis_strait, fram_strait, barents_sea_openi
 ##### Tsubouchi et al. (2018)
 #####
 
-const T_tsubouchi = 1.01    # °C
-const S_tsubouchi = 34.67
+# Tsubouchi et al.'s monthly boundary-mean potential temperature (°C) and salinity, Sep 2005 - Aug 2006 (their
+# Section 2d), one per 30-day block. (The paper prints the 6th salinity as 36.67, a typo for 34.67.)
+const T_tsubouchi = [1.26, 1.15, 1.01, 0.91, 0.94, 0.91, 0.83, 0.82, 0.88, 0.99, 1.15, 1.24]
+const S_tsubouchi = [34.67, 34.64, 34.63, 34.63, 34.66, 34.67, 34.68, 34.68, 34.70, 34.68, 34.67, 34.66]
 const tsubouchi_uncertainty = Dict("volume" => 0.2, "heat" => 5.0, "freshwater" => 5.0)   # reading the figures
 const tsubouchi_units       = Dict("volume" => "Sv", "heat" => "TW", "freshwater" => "mSv")
 
