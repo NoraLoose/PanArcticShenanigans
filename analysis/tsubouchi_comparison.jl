@@ -101,7 +101,7 @@ end
 # Volume (Sv), heat (TW) and freshwater (Sv) on our reference values; heat (TW) and freshwater (mSv) on Tsubouchi's
 ours(values, name, quantity) = values["$(name)_$quantity"]
 
-function theirs(values, name, quantity)
+function theirs(values, t, name, quantity)
     Q = values["$(name)_volume"]
     quantity == "volume" && return Q
     quantity == "heat"   && return values["$(name)_heat"] .- reference.ρcₚ * (T_tsubouchi - reference.T₀) .* Q .* 1e6 ./ 1e12
