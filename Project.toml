@@ -11,7 +11,10 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [sources]
-NumericalEarth = {rev = "ss/nested-ocean-model", url = "https://github.com/NumericalEarth/NumericalEarth.jl"}
+# NumericalEarth.jl#938 (net_inflow) on top of #676 (nested_ocean_model), and Oceananigans.jl#6524 (NetInflow),
+# until they are merged and released.
+NumericalEarth = {rev = "fjp/net-inflow", url = "https://github.com/NumericalEarth/NumericalEarth.jl"}
+Oceananigans = {rev = "fjp/net-inflow-target", url = "https://github.com/CliMA/Oceananigans.jl"}
 
 [compat]
 ClimaSeaIce = "0.7"

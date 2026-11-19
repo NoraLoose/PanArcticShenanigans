@@ -1,0 +1,18 @@
+# Tsubouchi et al. (2018, JPO 48, 2029-2055), Fig. 9a: monthly ocean freshwater transport (mSv-eq) per gateway and
+# net (mSv), relative to 34.67. SIGN FLIPPED from the paper to POSITIVE INTO THE ARCTIC (the paper plots export as
+# positive). Read from the figure by locating the markers (about +-5 mSv where markers overlap); the twelve months
+# reproduce Table 3's annual means to within 1 mSv (paper's signs: Davis 109, Fram 79, BSO 15, Bering -48, net 155).
+# "Months" are 30-day blocks from about 5 September 2005 (the tenth is 35 days), as in tsubouchi2018_monthly_volume.csv.
+month,davis,fram,bso,bering,net
+2005-09,-103,-51,-24,117,-62
+2005-10,-111,-62,-12,54,-133
+2005-11,-118,-74,-23,-44,-261
+2005-12,-122,-77,-4,-34,-235
+2006-01,-95,-111,-33,2,-238
+2006-02,-135,-124,-8,63,-199
+2006-03,-105,-81,-11,63,-133
+2006-04,-84,-70,-7,20,-139
+2006-05,-122,-85,11,80,-111
+2006-06,-113,-78,-24,65,-150
+2006-07,-110,-94,-26,94,-135
+2006-08,-105,-48,-15,98,-72

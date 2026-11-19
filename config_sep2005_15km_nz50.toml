@@ -1,0 +1,84 @@
+# Smoke test from 1 to 5 September 2005: config_smoke_test.toml in the validation year (Tsubouchi et al. 2018 moorings),
+# with a start that is not 1 January, which exercises jra55_read_fix.jl.
+# Run it before and after the change (with different `experiment` names, or renaming the output folder in between)
+# and compare the two with analysis/compare_transports.jl. With all defaults unchanged, the transports should agree.
+#
+# Run with:  julia +1.13 --project=. panarctic.jl config_smoke_test_sep2005.toml
+#
+# Note: a grid spacing that has not been run before needs the GEBCO regridding once (~55 GB of memory; cached after).
+
+architecture = "GPU"   # "GPU" or "CPU"
+experiment   = "sep2005_15km_nz50"  # name of the run: output and figures go to output_dir/<experiment> and figure_dir/<experiment>
+
+[grid]
+spacing_km = 15     # largest horizontal grid spacing [km] (at the pole; ~15% finer near the Atlantic edge)
+Nz         = 50     # vertical levels
+depth      = 5000   # maximum depth (m)
+bathymetry       = "GEBCO2026"   # "GEBCO2026" (15″, with IBCAO), "ETOPO" (ETOPO 2022, 60″) or "GLORYS" (GLORYS's own sea floor)
+bottom           = "partial"     # "partial": bottom cells cut at the sea floor; "full": whole cells
+partial_cell_fix = true          # with partial cells: flux-form momentum advection at bottom-cell thickness jumps
+                                 # (Oceananigans.jl#6533), which removes the bottom jets of issue #6532
+
+[time]
+start_date = 2005-09-01   # initial condition (GLORYS); the run starts at 00:00 on this date
+end_date   = 2005-11-01   # the run ends at 00:00 on this date; for short tests a date and time, e.g. 1993-01-01T03:00
+dt_minutes = 10           # time step
+
+[atmosphere]
+jra55 = "multi_year"   # "multi_year": JRA55 for the run's own dates; "repeat_year": the 1990–91 repeat year
+pressure = false           # true: JRA55's sea-level pressure acts on the ocean (nested_pressure_fix.jl). Off for now: with it,
+                           # Fram Strait drifts far from GLORYS (1–5 Jan 1993, 15 km: day 4 −12.4 Sv, GLORYS −2.1, −5.6
+                           # without pressure; the same at 100 km), which looks like an error in the pressure path, not
+                           # physics. Main has had no pressure on the ocean since #43.
+inverse_barometer = false  # with pressure = true: GLORYS's η carries no response to the pressure (issue #37), so add the
+                           # inverse-barometer sea level −(pᵃ − ⟨pᵃ⟩)/(ρ₀g) to GLORYS's η at the open sides (Flather) and
+                           # to the initial free surface; its domain mean is removed, so the volume is unchanged.
+                           # Keep false with pressure = false: then neither the model nor GLORYS feels the pressure
+
+[output]
+average_hours   = 24      # time-averaged output (3D ocean, free surface, sea ice), written to output_dir
+checkpoint_days = 30      # how often the full model state is saved for restarts
+restart         = false   # true: continue from the latest checkpoint in output_dir
+monitor_hours   = 1       # monitor.csv: transports through the open sides, mean η against GLORYS's, volume budget,
+                          # fastest point (plotting/volume_budget.jl, plotting/max_speed.jl); 0 = off
+
+[transports]
+# Volume, heat, salt and freshwater transports through the sections below and the open boundaries (see transports.jl).
+online                = true   # true: computed every time step and averaged over average_hours, written to arctic_transports.jld2
+reference_temperature = 0      # heat transport relative to this temperature (°C)
+reference_salinity    = 34.8   # freshwater transport relative to this salinity (g/kg)
+
+# Each section is a great-circle path through (longitude, latitude) waypoints. Positive transport flows to the right,
+# walking from the first waypoint to the last; these are ordered so that positive is into the Arctic. Both ends should
+# be on land, so the section spans the whole strait on any grid. Check with plotting/transport_sections.jl.
+[transports.sections]
+# Fram Strait follows the mooring array at 78°50′N; intermediate waypoints keep the great circles on that latitude.
+fram_strait         = { lon = [15.0, 10.0, 5.0, 0.0, -5.0, -10.0, -15.0, -20.0],
+                        lat = [78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333] }
+# Barents Sea Opening follows the mooring line from Norway (Fugløya) via Bjørnøya to Sørkapp, Svalbard.
+barents_sea_opening = { lon = [20.0, 19.0, 16.5],  lat = [70.0, 74.45, 77.0] }
+bering_strait       = { lon = [-166.0, -171.0], lat = [66.0, 66.0] }
+davis_strait        = { lon = [-53.0, -63.0],   lat = [67.0, 66.5] }
+
+[paths]
+data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
+output_dir = "output"    # model output: time averages (.jld2), checkpoints and the config; one folder per experiment
+figure_dir = "figures"   # figures and movies from the plotting/ scripts; one folder per experiment
+
+[boundaries]
+velocity_inflow_days = 0.0417   # oblique radiation on u, v: nudging timescale toward GLORYS on inflow (0.0417 days = 1 hour).
+                                # With 1 day, a partial bottom cell on the Atlantic open face drifted to −0.9 m/s
+                                # (GLORYS −0.26); 1 hour removes it and moves the section transports by < 0.1 Sv
+tracer_inflow_km     = 20  # T, S reservoir inflow relaxation length, both open sides
+relaxation_hours     = 6   # T, S and baroclinic u, v relax toward GLORYS in a ~2/3° band along the open sides
+                           # over this timescale; 0 = off (nested_ocean_model's default is 6)
+
+# Volume control (volume_control.jl): the net inflow through the two open sides together is pinned at every barotropic
+# substep, as NEMO and ROMS do; Flather splits it between the sides. Without it the domain's volume drifts from GLORYS's.
+follow_glorys_volume      = true   # true: the net inflow follows GLORYS's domain-mean η, with the surface freshwater handed back
+volume_relaxation_days    = 1      # with follow_glorys_volume: time over which the remaining drift from GLORYS's mean η is removed
+follow_glorys_tendency    = false  # with follow_glorys_volume: true also follows GLORYS's rate of change exactly
+# net_inflow_Sv           = 0.0    # with follow_glorys_volume = false: a constant net inflow instead (Sv, positive into the domain);
+                                   # with neither, Flather alone (no volume control)
+net_inflow_depth_exponent = 0.5    # the pin's correction to each boundary column ∝ Hᵖ: 0 uniform per length, 1 uniform velocity
+                                   # (NEMO, ROMS), 0.5 a uniform shift of GLORYS's η in Flather
