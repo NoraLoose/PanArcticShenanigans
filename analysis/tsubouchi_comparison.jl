@@ -11,7 +11,7 @@
 #   1. Calendar-month means of volume, heat and freshwater, model against GLORYS, on our reference values
 #      ([transports] reference_temperature and reference_salinity).
 #   2. Means over Tsubouchi et al.'s monthly blocks, model and GLORYS against Tsubouchi et al., on THEIR reference
-#      values: heat relative to 1.01 °C, freshwater relative to 34.67 (in mSv).
+#      values: heat and freshwater (mSv) relative to their monthly boundary-mean θ and S, block by block.
 #
 # Heat and freshwater per gateway depend on the reference values (the net over a closed boundary does not), so they are
 # converted. With the volume Q, our heat H (relative to T₀) and our freshwater F (relative to S₀):
@@ -169,7 +169,9 @@ end
 
 # 2. Tsubouchi et al.'s blocks, their reference values
 println(io, "## Against Tsubouchi et al. (2018), over their 30-day blocks\n")
-println(io, "Heat relative to $(T_tsubouchi) °C, freshwater relative to $(S_tsubouchi) (mSv). Tsubouchi et al.'s ",
+reference_list = join(["$(block.label) $(T_tsubouchi[block.index]) °C / $(S_tsubouchi[block.index])" for block in blocks], ", ")
+println(io, "Heat and freshwater (mSv) relative to Tsubouchi et al.'s monthly boundary-mean θ / S ($reference_list). ",
+            "Tsubouchi et al.'s ",
             "values read from their figures: ±0.2 Sv, ±5 TW, ±5 mSv. Blocks start on 5 September 2005; ",
             "\"days\" is how many days of the block the run covers.\n")
 for (quantity, digits) in (("volume", 2), ("heat", 0), ("freshwater", 0))
@@ -178,8 +180,8 @@ for (quantity, digits) in (("volume", 2), ("heat", 0), ("freshwater", 0))
     println(io, "|---|---|---|---|---|---|")
     for (code, name, label) in gateways, block in blocks
         a, b = max(block.a, 0), min(block.b, run_days)
-        mm, _ = window_mean(model_t, theirs(model, name, quantity), a, b)
-        gm = isnothing(glorys) ? NaN : first(window_mean(glorys_t, theirs(glorys, name, quantity), a, b))
+        mm, _ = window_mean(model_t, theirs(model, model_t, name, quantity), a, b)
+        gm = isnothing(glorys) ? NaN : first(window_mean(glorys_t, theirs(glorys, glorys_t, name, quantity), a, b))
         ts = tsubouchi[quantity][code][block.index]
         println(io, "| $label | $(block.label) | $(b - a) of $(block.b - block.a) | ", fmt(mm, digits), " | ",
                     fmt(gm, digits), " | ", fmt(ts, digits), " |")
@@ -209,16 +211,16 @@ for (row, quantity) in enumerate(quantities), (col, (code, name, label)) in enum
         value, δ = tsubouchi[quantity][code][block.index], tsubouchi_uncertainty[quantity]
         band!(ax, [a, b], [value - δ, value - δ], [value + δ, value + δ]; color = (:dodgerblue, 0.25))
         lines!(ax, [a, b], [value, value]; color = :dodgerblue, linewidth = 3, label = "Tsubouchi et al. (2018)")
-        mm, _ = window_mean(model_t, theirs(model, name, quantity), a, b)
+        mm, _ = window_mean(model_t, theirs(model, model_t, name, quantity), a, b)
         lines!(ax, [a, b], [mm, mm]; color = :red, linewidth = 3, linestyle = :dash, label = "model, block mean")
     end
-    lines!(ax, model_t, theirs(model, name, quantity); color = :red, label = "model")
-    isnothing(glorys) || scatter!(ax, glorys_t, theirs(glorys, name, quantity); color = :black, marker = :diamond,
+    lines!(ax, model_t, theirs(model, model_t, name, quantity); color = :red, label = "model")
+    isnothing(glorys) || scatter!(ax, glorys_t, theirs(glorys, glorys_t, name, quantity); color = :black, marker = :diamond,
                                   markersize = 6, label = "GLORYS")
     row == 1 && col == 1 && axislegend(ax; position = :lb, framevisible = false, unique = true, labelsize = 10)
 end
 Label(fig[0, :], "$experiment: transports into the Arctic against Tsubouchi et al. (2018); " *
-                 "heat relative to $(T_tsubouchi) °C, freshwater to $(S_tsubouchi)"; fontsize = 16)
+                 "heat and freshwater relative to their monthly boundary-mean θ and S"; fontsize = 16)
 
 file = joinpath(figure_dir, "tsubouchi_comparison.png")
 save(file, fig)
