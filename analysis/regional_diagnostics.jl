@@ -7,7 +7,7 @@
 # (e.g. _pan, _tsar), with "dates", the start of each averaging window. Runs on the CPU and reads one average at a time
 # (the first output, the initial state, is left out). Uses the grid saved with the output, so the regions are those of
 # the run's grid; the cell thicknesses follow the averaged free surface. The settings and region sets are those of
-# validation.toml [regional_diagnostics], the same for every run.
+# validation.toml [regional_diagnostics], the same as for the validation datasets (analysis/validation_diagnostics.jl).
 #
 # Heat and salt content and the profiles are linear in T and S, so the averages give the averages of the diagnostics
 # (up to the covariance of T and S with the cell thicknesses within each average, which is tiny). The freshwater

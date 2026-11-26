@@ -11,14 +11,8 @@ config_file = isempty(ARGS) ? joinpath(@__DIR__, "config.toml") : ARGS[1]
 config = TOML.parsefile(config_file)
 @info "Settings from $config_file" config
 
-# The data, output and figure folders, the same for every config file: your own in paths_local.toml (a copy of
-# paths.toml, not in the repo), otherwise the defaults in paths.toml
-paths_file = joinpath(@__DIR__, isfile(joinpath(@__DIR__, "paths_local.toml")) ? "paths_local.toml" : "paths.toml")
-paths = TOML.parsefile(paths_file)["paths"]
-@info "Folders from $paths_file" paths
+include("paths.jl")   # paths (paths.toml or paths_local.toml), data_dir, dir_kw
 
-data_dir   = paths["data_dir"]
-dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
 experiment = get(config, "experiment", "")   # "" (or no setting): directly in output_dir and figure_dir
 output_dir = mkpath(joinpath(paths["output_dir"], experiment))   # model output
 figure_dir = mkpath(joinpath(paths["figure_dir"], experiment))   # figures and movies
@@ -31,6 +25,5 @@ sea_ice_output_file = joinpath(output_dir, "arctic_sea_ice.jld2")
 checkpoint_prefix   = "arctic_checkpoint"   # checkpoints in output_dir, written by panarctic.jl
 transport_output_file         = joinpath(output_dir, "arctic_transports.jld2")           # online, by panarctic.jl
 offline_transport_output_file = joinpath(output_dir, "arctic_transports_offline.jld2")   # by analysis/transports.jl
-
 # by analysis/regional_diagnostics.jl, for a region set (regions.jl)
 regional_output_file(set) = joinpath(output_dir, "arctic_regional_diagnostics_$(lowercase(set)).jld2")

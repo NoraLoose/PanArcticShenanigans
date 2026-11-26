@@ -1,11 +1,11 @@
 # Gateway transports (Davis, Fram, the BSO, Bering) of the model and of GLORYS, as monthly means, and against
 # Tsubouchi et al. (2018, JPO 48, 2029-2055), the Sep 2005 - Aug 2006 mooring-based inverse estimate.
 #
-#   julia +1.13 --project=. analysis/glorys_transports.jl [config.toml]      (once, for the GLORYS reference)
+#   julia +1.13 --project=. analysis/validation_diagnostics.jl GLORYS --run config.toml   (once, for the GLORYS reference)
 #   julia +1.13 --project=. analysis/tsubouchi_comparison.jl [config.toml]
 #
-# Reads the model's online transports (arctic_transports.jld2) and, if present, GLORYS's (glorys_transports.jld2) from
-# `output_dir`. Writes two tables, printed and saved as tsubouchi_comparison.md in `output_dir` (markdown, ready to
+# Reads the model's online transports (arctic_transports.jld2) from `output_dir` and, if present, GLORYS's from
+# <validation_dir>/GLORYS/transports/. Writes two tables, printed and saved as tsubouchi_comparison.md in `output_dir` (markdown, ready to
 # paste), and tsubouchi_comparison.png in `figure_dir`:
 #
 #   1. Calendar-month means of volume, heat and freshwater, model against GLORYS, on our reference values
@@ -19,13 +19,14 @@
 #     freshwater relative to S′ = Q - (S₀ / S′) (Q - F)          (since F = Q - Σ vS / S₀)
 # T′ and S′ are Tsubouchi et al.'s monthly boundary-mean potential temperature and salinity (Section 2d), one per block.
 #
-# Tsubouchi et al.'s monthly values (analysis/references/tsubouchi2018_monthly_*.csv) are read from their Figs. 5a, 7a
+# Tsubouchi et al.'s monthly values (validation/references/tsubouchi2018_monthly_*.csv) are read from their Figs. 5a, 7a
 # and 9a: about ±0.2 Sv, ±5 TW, ±5 mSv, drawn as bands. Their "months" are 30-day blocks from 5 September 2005 (the
 # tenth is 35 days); a block only partly covered by the run is compared over the covered days, which the table lists.
 # Everything is positive into the Arctic.
 
 include("../config.jl")
 include("../transports.jl")
+include("../validation_config.jl")   # read_glorys_transports
 
 using CairoMakie, Dates, JLD2, Printf
 
@@ -51,7 +52,7 @@ const tsubouchi_uncertainty = Dict("volume" => 0.2, "heat" => 5.0, "freshwater" 
 const tsubouchi_units       = Dict("volume" => "Sv", "heat" => "TW", "freshwater" => "mSv")
 
 function read_tsubouchi(quantity)
-    file  = joinpath(@__DIR__, "references", "tsubouchi2018_monthly_$quantity.csv")
+    file  = joinpath(@__DIR__, "..", "validation", "references", "tsubouchi2018_monthly_$quantity.csv")
     lines = filter(l -> !startswith(l, "#") && !isempty(strip(l)), readlines(file))
     header = strip.(split(lines[1], ","))
     rows   = [strip.(split(l, ",")) for l in lines[2:end]]
@@ -84,17 +85,16 @@ window = config["output"]["average_hours"] / 24
     return (t, values), reference
 end
 
-# GLORYS's daily means at noon of their day. glorys_transports.jl uses the config's reference values and the same ρ cₚ.
-glorys_file = joinpath(output_dir, "glorys_transports.jld2")
-if isfile(glorys_file)
-    glorys_t, glorys = jldopen(glorys_file) do f
-        Dates.value.(Date.(f["dates"]) .- start_date) .+ 0.5, Dict(k => f["transports/$k"] for k in keys(f["transports"]))
-    end
+# GLORYS's daily means at noon of their day, computed with the config's reference values and the same ρ cₚ
+glorys_days = start_date:Day(1):end_date - Day(1)
+glorys_read = read_glorys_transports(config, glorys_days)
+if !isnothing(glorys_read)
+    glorys_t, glorys = Dates.value.(glorys_read.dates .- start_date) .+ 0.5, glorys_read.transports
     config_reference = reference_values(config)
     (config_reference.reference_temperature, config_reference.reference_salinity) == (reference.T₀, reference.S₀) ||
         @warn "The config's reference values differ from the model run's; GLORYS's heat and freshwater may not compare"
 else
-    @warn "No $glorys_file: run analysis/glorys_transports.jl first for the GLORYS reference"
+    @warn "No GLORYS transports for the run's days: analysis/validation_diagnostics.jl GLORYS --run $config_file"
     glorys_t, glorys = Float64[], nothing
 end
 

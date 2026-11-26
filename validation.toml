@@ -1,5 +1,7 @@
-# Settings shared by every run for the regional diagnostics (validation_config.jl), so that all runs are computed alike
-# and can be compared. The run's own settings are in its config file.
+# Settings shared by every experiment for comparing runs with validation datasets (validation_config.jl): the same for
+# all runs, so that the diagnostics of every run and every dataset are computed alike and can be compared. The run's own
+# settings are in its config file; the folders, including validation_dir, in paths.toml (or your paths_local.toml).
+# See validation/README.md.
 
 [regional_diagnostics]
 # Heat, salt and freshwater content and mean T, S profiles of the regions of regions.jl (regional_diagnostics.jl).
@@ -9,3 +11,14 @@ reference_temperature = 0      # heat content relative to this temperature (°C)
 reference_salinity    = 34.8   # freshwater content relative to this salinity (g/kg), also the isohaline that bounds it
 depth_bounds          = [100, 200, 300, 500, 700, 1000, 2000]   # content from the surface down to each depth (m); the
                                                                 # whole water column is added
+
+# The datasets to compare with, and their options. Each is computed with analysis/validation_diagnostics.jl <dataset>
+# (analysis/compare_with_validation.jl does what a run needs). GLORYS's downloads are those of the model (data_dir).
+[datasets.GLORYS]
+# GLORYS12 daily means on its own 1/12° grid (validation/glorys.jl), for the days asked for (--run config.toml, or
+# --from and --to); each day is computed once and kept.
+
+[datasets.WOA23]
+# World Ocean Atlas 2023 climatologies on their own 0.25° grid (validation/woa23.jl): each decade's code and the years it
+# stands for, through which its monthly climatology repeats every year in the plots.
+decades = { "8594" = [1985, 1994], "95A4" = [1995, 2004], "A5B4" = [2005, 2014], "B5C2" = [2015, 2022] }

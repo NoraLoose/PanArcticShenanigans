@@ -1,16 +1,17 @@
 # The model's transports through the sections (online, arctic_transports.jld2) against GLORYS's on its own grid
-# (glorys_transports.jld2, from analysis/glorys_transports.jl): volume, heat and freshwater (rows) for each section
+# (<validation_dir>/GLORYS/transports/, from analysis/validation_diagnostics.jl): volume, heat and freshwater (rows) for each section
 # (columns), positive into the Arctic. The model's averages are drawn at the middle of their averaging windows (the
 # first output, the initial state, is left out); GLORYS's daily means at noon of their day. Writes
 # gateway_transports.png to `figure_dir`.
 #
-#   julia +1.13 --project=. analysis/glorys_transports.jl [config.toml]    (once, for the reference)
+#   julia +1.13 --project=. analysis/validation_diagnostics.jl GLORYS --run config.toml   (once, for the reference)
 #   julia +1.13 --project=. plotting/gateway_transports.jl [config.toml]
 #
 # Uses the same config as panarctic.jl.
 
 include("../config.jl")
 include("../transports.jl")
+include("../validation_config.jl")   # read_glorys_transports
 
 using CairoMakie, Dates, JLD2
 
@@ -27,9 +28,9 @@ model = jldopen(transport_output_file) do f
          (key => [only(f["timeseries/$key/$i"]) for i in iterations] for key in keys(f["timeseries"]) if key != "t")...)
 end
 
-glorys_file = joinpath(output_dir, "glorys_transports.jld2")
-glorys = isfile(glorys_file) ? jldopen(f -> (dates = Date.(f["dates"]), transports = Dict(k => f["transports/$k"] for k in keys(f["transports"]))), glorys_file) :
-                               (@warn "No $glorys_file: run analysis/glorys_transports.jl first for the GLORYS reference"; nothing)
+run_days = Date(config["time"]["start_date"]):Day(1):Date(DateTime(config["time"]["end_date"]) - Millisecond(1))
+glorys   = read_glorys_transports(config, run_days)
+isnothing(glorys) && @warn "No GLORYS transports for the run's days: analysis/validation_diagnostics.jl GLORYS --run $config_file"
 
 fig = Figure(size = (300 * length(section_names) + 100, 750))
 for (row, quantity) in enumerate(quantities), (col, name) in enumerate(section_names)

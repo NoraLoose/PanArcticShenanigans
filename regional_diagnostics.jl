@@ -1,6 +1,7 @@
-# Heat, salt and freshwater content and mean temperature and salinity profiles of the regions of regions.jl, for the
-# model's daily averages (analysis/regional_diagnostics.jl): it needs only the grid (an ImmersedBoundaryGrid, whose cell
-# thicknesses follow the free surface on the model's z-star grid), T and S, so it runs on any grid.
+# Heat, salt and freshwater content and mean temperature and salinity profiles of the regions of regions.jl, with the
+# same code for the model's daily averages (analysis/regional_diagnostics.jl) and for gridded validation datasets on
+# their own grids (analysis/validation_diagnostics.jl): it needs only the grid (an ImmersedBoundaryGrid, whose cell
+# thicknesses follow the free surface on the model's z-star grid), T and S.
 #
 # For each region:
 #   heat                  ρ₀ cₚ ∫ (T − T_ref) dV                   J
@@ -13,7 +14,7 @@
 #   temperature, salinity volume-weighted mean on each level (°C, g/kg)
 #   volume                volume of each level (m³)
 # T_ref, S_ref, the depths and the region sets are those of validation.toml [regional_diagnostics] (validation_config.jl),
-# the same for every run; ρ₀ and cₚ are NumericalEarth's (transports.jl), as for the transports.
+# the same for every run and dataset; ρ₀ and cₚ are NumericalEarth's (transports.jl), as for the transports.
 
 include("regions.jl")
 include("transports.jl")   # default_reference_density, default_heat_capacity
@@ -96,7 +97,8 @@ level_depths(grid) = -collect(znodes(grid.underlying_grid, Center()))
 #
 # The regions (set, codes, names, masks, areas), the levels and the settings; and the diagnostics of a list of times
 # (`results`, one `regional_diagnostics` per time), each with time as the last dimension, with `dates` (strings) and any
-# `extra` entries: a run's file holds both (save_regional_diagnostics).
+# `extra` entries. A run's file holds both (save_regional_diagnostics); a validation dataset keeps the regions of a set
+# once (save_dataset_regions) and its diagnostics in a file per period (save_dataset_period).
 
 function write_regions!(file, regions, grid; level_depths = nothing, settings,
                         reference_density = default_reference_density, heat_capacity = default_heat_capacity)
@@ -142,6 +144,54 @@ A run's diagnostics of one region set: regions, settings and results in the JLD2
 function save_regional_diagnostics(path, results, regions, grid; dates, level_depths, settings, extra...)
     jldopen(path, "w") do file
         write_regions!(file, regions, grid; level_depths, settings)
+        write_results!(file, results; dates, extra...)
+    end
+    @info "Wrote $path"
+end
+
+# The settings stored in a file, to compare with those of validation.toml
+stored_settings(file) = (; reference_temperature = file["reference_temperature"],
+                           reference_salinity = file["reference_salinity"], depth_bounds = file["depth_bounds"])
+
+"""
+    save_dataset_regions(dataset, regions, grid; level_depths, settings)
+
+A validation dataset's regions of one set (regions.jld2), unless there are already some made with the same settings;
+made with other settings, the dataset's diagnostics of that set are out of date, and are removed. `grid = nothing` for
+a dataset whose cells differ between periods (its masks, areas and levels are in each period's file) or that has no
+cells (profiles that are already regional means).
+"""
+function save_dataset_regions(dataset, regions, grid; level_depths = nothing, settings)
+    path = regions_file(dataset, regions.set)
+    if isfile(path)
+        jldopen(stored_settings, path) == settings && return
+        @warn "The settings of $dataset's diagnostics ($(regions.set)) have changed: computing them again"
+        foreach(f -> rm(joinpath(diagnostics_dir(dataset, regions.set), f)), readdir(diagnostics_dir(dataset, regions.set)))
+    end
+    jldopen(file -> write_regions!(file, regions, grid; level_depths, settings), path, "w")
+end
+
+"""
+    save_dataset_period(dataset, set, period, results; dates, regions = nothing, grid = nothing, level_depths = nothing,
+                        extra...)
+
+A validation dataset's diagnostics of one region set over one period (a day, a decade, ...): `<period>.jld2`. A dataset
+whose cells differ between periods (e.g. WOA's sea floor, between decades) gives the period's `regions`, `grid` and
+`level_depths`, which are then kept in the period's file instead of regions.jld2.
+"""
+function save_dataset_period(dataset, set, period, results; dates, regions = nothing, grid = nothing,
+                             level_depths = nothing, extra...)
+    path = period_file(dataset, set, period)
+    jldopen(path, "w") do file
+        if !isnothing(regions)
+            Nx, Ny = size(grid)[1:2]
+            area = [Azᶜᶜᶜ(i, j, 1, grid) for i in 1:Nx, j in 1:Ny]
+            file["regions/area"] = [sum(area[regions.masks[code]]) for code in regions.codes]   # m²
+            for code in regions.codes
+                file["regions/masks/$code"] = Array(regions.masks[code])
+            end
+            file["level_depths"] = level_depths
+        end
         write_results!(file, results; dates, extra...)
     end
     @info "Wrote $path"

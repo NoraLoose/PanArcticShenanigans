@@ -1,6 +1,6 @@
 # The model domain: its map projection and extent, which do not depend on the grid spacing or the config. Included by
-# setup.jl (the model grid); within_model_domain tells which columns of another grid (e.g. a dataset's) lie inside the
-# domain, without a run config or the bathymetry.
+# setup.jl (the model grid) and by the validation scripts (which columns of a dataset lie inside the domain), so that
+# those need neither a run config nor the bathymetry.
 
 using Oceananigans
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, geographic_to_conformal_conic

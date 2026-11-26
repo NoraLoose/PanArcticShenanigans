@@ -2,7 +2,7 @@
 
 julia_version = "1.13.3"
 manifest_format = "2.1"
-project_hash = "46180ccb4592d2e4ab6ca25522f38f99b0d6b38d"
+project_hash = "001cf0449bd1d68f18741e34297e5a21cd3ed770"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -996,6 +996,20 @@ git-tree-sha1 = "45288942190db7c5f760f59c04495064eedf9340"
 registries = "General"
 uuid = "b0724c58-0f36-5564-988d-3bb0596ebc4a"
 version = "0.22.4+0"
+
+[[deps.GibbsSeaWater]]
+deps = ["GibbsSeaWater_jll", "Libdl", "Test"]
+git-tree-sha1 = "f4318e7a751703a5db8b57c112e5cd5c218d296b"
+registries = "General"
+uuid = "9a22fb26-0b63-4589-b28e-8f9d0b5c3d05"
+version = "0.1.4"
+
+[[deps.GibbsSeaWater_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "c91ca76546871efaa1aefdd2b19cc41c3ead2160"
+registries = "General"
+uuid = "6727f6b2-98ea-5d0a-8239-2f72283ddb11"
+version = "3.5.2+0"
 
 [[deps.Giflib_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
