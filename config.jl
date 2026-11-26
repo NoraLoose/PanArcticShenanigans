@@ -31,3 +31,6 @@ sea_ice_output_file = joinpath(output_dir, "arctic_sea_ice.jld2")
 checkpoint_prefix   = "arctic_checkpoint"   # checkpoints in output_dir, written by panarctic.jl
 transport_output_file         = joinpath(output_dir, "arctic_transports.jld2")           # online, by panarctic.jl
 offline_transport_output_file = joinpath(output_dir, "arctic_transports_offline.jld2")   # by analysis/transports.jl
+
+# by analysis/regional_diagnostics.jl, for a region set (regions.jl)
+regional_output_file(set) = joinpath(output_dir, "arctic_regional_diagnostics_$(lowercase(set)).jld2")

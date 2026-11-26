@@ -2,6 +2,7 @@
 # Included with `include("setup.jl")`; the config file is the first command-line argument (default config.toml).
 
 include("config.jl")
+include("domain.jl")   # domain_x, domain_y, domain_projection, φ_south
 
 using NumericalEarth, Oceananigans, Oceananigans.Units
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
@@ -14,7 +15,7 @@ arch = config["architecture"] == "GPU" ? GPU() : CPU()
 
 # ## Grid
 #
-# Polar stereographic (ConformalConicGrid, λ₀ = −40°). Open boundaries on the Atlantic
+# Polar stereographic (ConformalConicGrid, λ₀ = −40°) over the domain of domain.jl. Open boundaries on the Atlantic
 # (j = 1) and Pacific (j = Ny) edges; east/west edges are land. `spacing_km` is the largest
 # spacing (at the pole; cells shrink ~15% toward the Atlantic edge).
 
@@ -23,18 +24,14 @@ depth   = config["grid"]["depth"] * meters
 spacing = config["grid"]["spacing_km"] * kilometers
 z       = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
 
-x₁, x₂  = -3280e3, 3616e3   # west–east projected extent (m)
-y₁, y₂  = -4100e3, 2700e3   # south–north projected extent (m)
+(x₁, x₂), (y₁, y₂) = domain_x, domain_y
 underlying_grid = ConformalConicGrid(arch;
-                                     size               = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
-                                     x                  = (x₁, x₂),
-                                     y                  = (y₁, y₂),
-                                     central_longitude  = -40,   # λ₀: mid-Atlantic
-                                     standard_parallel  = 90,
-                                     latitude_of_origin = 90,
+                                     size = (round(Int, (x₂ - x₁) / spacing), round(Int, (y₂ - y₁) / spacing), Nz),
+                                     x    = (x₁, x₂),
+                                     y    = (y₁, y₂),
+                                     domain_projection...,
                                      z,
                                      halo = (7, 7, 7))
-φ_south = 43   # southern limit of GLORYS data (grid reaches 43.6°N)
 
 Nx, Ny = size(underlying_grid)[1:2]
 @info "Grid: $Nx × $Ny × $Nz, largest spacing $(spacing / 1e3) km"
