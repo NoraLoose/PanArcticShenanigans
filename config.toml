@@ -59,11 +59,6 @@ barents_sea_opening = { lon = [20.0, 19.0, 16.5],  lat = [70.0, 74.45, 77.0] }
 bering_strait       = { lon = [-166.0, -171.0], lat = [66.0, 66.0] }
 davis_strait        = { lon = [-53.0, -63.0],   lat = [67.0, 66.5] }
 
-[paths]
-data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
-output_dir = "output"    # model output: time averages (.jld2), checkpoints and the config; one folder per experiment
-figure_dir = "figures"   # figures and movies from the plotting/ scripts; one folder per experiment
-
 [boundaries]
 velocity_inflow_days = 0.0417   # oblique radiation on u, v: nudging timescale toward GLORYS on inflow (0.0417 days = 1 hour).
                                 # With 1 day, a partial bottom cell on the Atlantic open face drifted to −0.9 m/s

@@ -1,0 +1,4 @@
+[paths]
+data_dir   = ""   # where downloads are stored; "" = each dataset's default cache
+output_dir = "output"    # model output: time averages (.jld2), checkpoints and the config; one folder per experiment
+figure_dir = "figures"   # figures and movies from the plotting/ scripts; one folder per experiment
