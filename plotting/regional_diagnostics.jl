@@ -18,8 +18,11 @@
 #   julia +1.13 --project=. analysis/regional_diagnostics.jl [config.toml]
 #   julia +1.13 --project=. plotting/regional_diagnostics.jl [config.toml]
 #   julia +1.13 --project=. plotting/regional_diagnostics.jl config_a.toml config_b.toml ...   (several runs)
+#   julia +1.13 --project=. plotting/regional_diagnostics.jl config_a.toml config_b.toml --colors red,royalblue
 #
-# The runs are told apart by their experiment names; their time axis is days since the earliest start.
+# The runs are told apart by their experiment names; their time axis is days since the earliest start. --colors gives
+# their colours, in the order of the config files (Makie's colour names, or hex like "#1f77b4"); otherwise a palette
+# apart from WOA23's colours.
 
 include("../config.jl")
 include("../validation_config.jl")
@@ -52,8 +55,11 @@ config_files = isempty(ARGS) ? [config_file] : filter(endswith(".toml"), ARGS)
 configs      = [TOML.parsefile(file) for file in config_files]
 experiments  = [get(c, "experiment", splitext(basename(f))[1]) for (c, f) in zip(configs, config_files)]
 allunique(experiments) || error("The runs need different experiment names: $experiments")
-run_colors   = [:red, :darkgoldenrod, :saddlebrown, :darkcyan, :deeppink, :olive]   # apart from WOA23's colours
-length(configs) ≤ length(run_colors) || error("At most $(length(run_colors)) runs in one figure")
+colors_option = command_line_option("colors")
+run_colors = isnothing(colors_option) ? [:red, :darkgoldenrod, :saddlebrown, :darkcyan, :deeppink, :olive] :
+                                        [Makie.to_color(String(strip(c))) for c in split(colors_option, ",")]
+length(configs) ≤ length(run_colors) ||
+    error("$(length(configs)) runs, but $(length(run_colors)) colours: give one per run with --colors")
 
 # Figures: the run's figure folder, or for several runs a folder named after them
 figures = length(configs) == 1 ? figure_dir : mkpath(joinpath(paths["figure_dir"], "compare_" * join(experiments, "_")))

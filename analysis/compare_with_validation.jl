@@ -2,6 +2,7 @@
 #
 #   julia +1.13 --project=. analysis/compare_with_validation.jl [config.toml]
 #   julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml ...   (several runs)
+#   julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml --colors red,royalblue
 #
 # Runs only the steps whose results are missing or out of date, each with its own script (which can also be run alone):
 #   1. the validation datasets' regional diagnostics, if not there yet (analysis/validation_diagnostics.jl WOA23, TSAR,
@@ -29,7 +30,9 @@ if length(config_files) > 1
     for file in config_files
         run(`$(Base.julia_cmd()) --project=$repo $(@__FILE__) $file --no-figures`)
     end
-    run(`$(Base.julia_cmd()) --project=$repo $(joinpath(repo, "plotting", "regional_diagnostics.jl")) $config_files`)
+    colors = command_line_option("colors")
+    run(`$(Base.julia_cmd()) --project=$repo $(joinpath(repo, "plotting", "regional_diagnostics.jl")) $config_files
+         $(isnothing(colors) ? String[] : ["--colors", colors])`)
     @info "Figures of $(length(config_files)) runs in the figure folder's compare_... folder"
     exit()
 end
