@@ -10,8 +10,8 @@
 #   3. the run's regional diagnostics, if missing or older than its output (analysis/regional_diagnostics.jl)
 #   4. the figures (in figure_dir): plotting/regional_diagnostics.jl, plotting/gateway_transports.jl, and
 #      analysis/tsubouchi_comparison.jl if the run overlaps Tsubouchi et al.'s Sep 2005 - Aug 2006
-# With several runs, steps 1-3 are done for each, and the figures show them all together (in a folder
-# compare_<experiment>_<experiment>... in the figure folder). Needs no GPU. Each step is a separate Julia process, so a
+# With several runs, all four steps are done for each run (its own figures), and then the regional figures show them all
+# together (in a folder compare_<experiment>_<experiment>... in the figure folder). Needs no GPU. Each step is a separate Julia process, so a
 # step that fails leaves the results of the others.
 
 include("../config.jl")
@@ -24,15 +24,15 @@ repo = joinpath(@__DIR__, "..")
 config_files = filter(endswith(".toml"), ARGS)
 figures_wanted = !("--no-figures" in ARGS)
 
-# Several runs: steps 1-3 for each (this script, without figures), then the figures of all of them
+# Several runs: everything for each (this script, one run at a time), then the regional figures of all of them
 if length(config_files) > 1
     for file in config_files
-        run(`$(Base.julia_cmd()) --project=$repo $(@__FILE__) $file --no-figures`)
+        run(`$(Base.julia_cmd()) --project=$repo $(@__FILE__) $file $(figures_wanted ? String[] : ["--no-figures"])`)
     end
     colors = command_line_option("colors")
     run(`$(Base.julia_cmd()) --project=$repo $(joinpath(repo, "plotting", "regional_diagnostics.jl")) $config_files
          $(isnothing(colors) ? String[] : ["--colors", colors])`)
-    @info "Figures of $(length(config_files)) runs in the figure folder's compare_... folder"
+    @info "Each run's figures in its figure folder; those of all $(length(config_files)) runs in the compare_... folder"
     exit()
 end
 julia_script(script, args...) = `$(Base.julia_cmd()) --project=$repo $(joinpath(repo, script)) $args`
