@@ -3,11 +3,12 @@
 #
 #   julia +1.13 --project=. analysis/regional_diagnostics.jl [config.toml]
 #
-# Reads arctic_ocean.jld2 from `output_dir` and writes arctic_regional_diagnostics_<set>.jld2 there for each region set
-# (e.g. _pan, _tsar), with "dates", the start of each averaging window. Runs on the CPU and reads one average at a time
-# (the first output, the initial state, is left out). Uses the grid saved with the output, so the regions are those of
-# the run's grid; the cell thicknesses follow the averaged free surface. The settings and region sets are those of
-# validation.toml [regional_diagnostics], the same as for the validation datasets (analysis/validation_diagnostics.jl).
+# Reads arctic_ocean.jld2 from `output_dir` and writes arctic_regional_diagnostics_<set>.jld2 for each region set (e.g.
+# _pan, _tsar) to `diagnostics_dir` (paths.toml; by default output_dir), with "dates", the start of each averaging
+# window. Runs on the CPU and reads one average at a time (the first output, the initial state, is left out). Uses the
+# grid saved with the output, so the regions are those of the run's grid; the cell thicknesses follow the averaged free
+# surface. The settings and region sets are those of validation.toml [regional_diagnostics], the same for every run
+# and for the validation datasets (analysis/validation_diagnostics.jl).
 #
 # Heat and salt content and the profiles are linear in T and S, so the averages give the averages of the diagnostics
 # (up to the covariance of T and S with the cell thicknesses within each average, which is tiny). The freshwater

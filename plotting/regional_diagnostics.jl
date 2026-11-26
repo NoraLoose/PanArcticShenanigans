@@ -59,7 +59,8 @@ title   = join(experiments, ", ")
 
 # A run's diagnostics of a set, with its dates as DateTime, its start, and its averaging window
 function read_run(c, experiment, set)
-    file = joinpath(paths["output_dir"], get(c, "experiment", ""), "arctic_regional_diagnostics_$(lowercase(set)).jld2")
+    base = isempty(get(paths, "diagnostics_dir", "")) ? paths["output_dir"] : paths["diagnostics_dir"]   # as config.jl
+    file = joinpath(base, get(c, "experiment", ""), "arctic_regional_diagnostics_$(lowercase(set)).jld2")
     isfile(file) || error("No $file: run analysis/regional_diagnostics.jl for $experiment first")
     d = read_entries(file)
     return merge(d, (; dates = DateTime.(d.dates), start = DateTime(c["time"]["start_date"]),
