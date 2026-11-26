@@ -10,7 +10,9 @@
 #       slightly in volume (coasts, sea floor), so their contents differ by an offset as well.
 #   regional_temperature_profiles_<set>.png, regional_salinity_profiles_<set>.png
 #       the mean profiles of the run and GLORYS on the run's first and last day (with several runs, each run's last day),
-#       and the annual climatology of each WOA23 decade
+#       the annual climatology of each WOA23 decade, the observed annual-mean profiles (TSAR) of the runs' years, and
+#       UDASH's mean of the profiles in the region over the runs' months (with the largest number of profiles on a level;
+#       levels without any left out)
 # A dataset without diagnostics for the set, or for the run's days, is left out (with a warning).
 #
 #   julia +1.13 --project=. analysis/regional_diagnostics.jl [config.toml]
@@ -111,6 +113,29 @@ for set in region_set_names(validation)
     isnothing(glorys) && @warn "No GLORYS diagnostics ($set) for the runs' days: analysis/validation_diagnostics.jl GLORYS --run <config>"
     woa  = something(read_dataset("WOA23", set, run), [])
     isempty(woa) && @warn "No WOA23 diagnostics ($set): analysis/validation_diagnostics.jl WOA23"
+    tsar = read_dataset("TSAR", set, run)
+    udash_periods = read_dataset("UDASH", set, run)
+
+    # UDASH's monthly mean profiles over the run's months, weighted by their numbers of profiles: (; temperature,
+    # salinity, n_temperature, n_salinity, level_depths, months) with the profiles' count per level, or nothing
+    function udash_over_run()
+        isnothing(udash_periods) && return nothing
+        months = [(p, m) for p in udash_periods for (m, d) in enumerate(p.dates)
+                  if any(from < DateTime(d) + Month(1) && DateTime(d) < to for (from, to) in spans)]
+        isempty(months) && return nothing
+        function combine(field, count)   # each month's mean weighted by its number of profiles
+            n = sum(getfield(p, count)[:, :, m] for (p, m) in months)
+            total = sum(replace(getfield(p, field)[:, :, m], NaN => 0.0) .* getfield(p, count)[:, :, m] for (p, m) in months)
+            return ifelse.(n .> 0, total ./ max.(n, 1), NaN), n
+        end
+        θ, nθ = combine(:temperature, :n_temperature)
+        S, nS = combine(:salinity, :n_salinity)
+        label = join(unique(Dates.format(DateTime(p.dates[m]), "u yyyy") for (p, m) in months), ", ")
+        return (; temperature = θ, salinity = S, n_temperature = nθ, n_salinity = nS,
+                  level_depths = first(udash_periods).level_depths, label)
+    end
+    udash = udash_over_run()
+    isnothing(udash) && @info "No UDASH profiles ($set) for the run's months: analysis/validation_diagnostics.jl UDASH --run $config_file"
     woa_colors = Makie.wong_colors()[[1, 3, 4, 6, 2, 5]]
 
     glorys_index(day) = isnothing(glorys) ? nothing : findfirst(==(day), Date.(glorys.dates))
@@ -164,6 +189,7 @@ for set in region_set_names(validation)
         @info "Wrote $file"
     end
 
+    run_years = unique(y for (from, to) in spans for y in year(from):year(to - Millisecond(1)))   # the runs' years only
     for (name, label, field) in (("temperature", "temperature (°C)", :temperature), ("salinity", "salinity (g/kg)", :salinity))
         fig = Figure(size = figure_size(R) .+ (0, 150))
         legend = Pair{String, Any}[]   # the figure's legend: every line drawn in any panel, once
@@ -175,6 +201,25 @@ for set in region_set_names(validation)
             for (k, d) in enumerate(woa)
                 lines!(ax, getfield(d, Symbol("annual_$field"))[:, r], d.level_depths; color = woa_colors[k], linewidth = 1.5)
                 entry!(woa_label(d), LineElement(color = woa_colors[k], linewidth = 1.5))
+            end
+            if !isnothing(tsar)
+                for p in tsar, (n, y) in enumerate(p.dates)
+                    parse(Int, y) in run_years || continue
+                    lines!(ax, getfield(p, field)[:, r, n], p.level_depths; color = :darkgreen, linewidth = 2)
+                    entry!("observed $y (TSAR)", LineElement(color = :darkgreen, linewidth = 2))
+                end
+            end
+            if !isnothing(udash)
+                n = getfield(udash, Symbol("n_$field"))[:, r]
+                if any(n .> 0)
+                    observed = n .> 0
+                    scatterlines!(ax, getfield(udash, field)[observed, r], udash.level_depths[observed]; color = :purple,
+                                  markersize = 5, linewidth = 1.5)
+                    text!(ax, 0.98, 0.02; text = "UDASH: $(maximum(n)) profiles", space = :relative,
+                          align = (:right, :bottom), fontsize = 10, color = :purple)
+                    entry!("UDASH $(udash.label), mean of the profiles", [LineElement(color = :purple, linewidth = 1.5),
+                                                                          MarkerElement(color = :purple, marker = :circle, markersize = 5)])
+                end
             end
             for (k, run) in enumerate(runs), (day, style) in profile_days(run)
                 lines!(ax, getfield(run, field)[:, r, findfirst(==(day), Date.(run.dates))], run.level_depths;

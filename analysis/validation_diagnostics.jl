@@ -6,6 +6,8 @@
 # diagnostics are computed again if the settings changed).
 #
 #   julia +1.13 --project=. analysis/validation_diagnostics.jl WOA23
+#   julia +1.13 --project=. analysis/validation_diagnostics.jl TSAR
+#   julia +1.13 --project=. analysis/validation_diagnostics.jl UDASH [--run config.toml]   (all years, or the run's)
 #   julia +1.13 --project=. analysis/validation_diagnostics.jl GLORYS --run config.toml
 #   julia +1.13 --project=. analysis/validation_diagnostics.jl GLORYS --from 1993-01-01 --to 1993-03-01
 #
@@ -26,6 +28,8 @@ include("../domain.jl")
 include("../regional_diagnostics.jl")
 include("../validation/glorys.jl")
 include("../validation/woa23.jl")
+include("../validation/tsar.jl")
+include("../validation/udash.jl")
 
 settings  = regional_settings(validation)
 set_names = region_set_names(validation)
@@ -53,6 +57,11 @@ if dataset == "GLORYS"
                             glorys_transports!(days, run_config)
 elseif dataset == "WOA23"
     woa23_regional_diagnostics!(options["decades"]; settings, set_names)
+elseif dataset == "UDASH"
+    years = isnothing(run_config) ? (first(options["years"]):last(options["years"])) : unique(year.(glorys_days()))
+    udash_regional_diagnostics!(options, years; settings, set_names)
+elseif dataset == "TSAR"
+    tsar_regional_diagnostics!(options; settings, set_names)
 else
     error("No diagnostics for dataset $dataset yet: add validation/$(lowercase(dataset)).jl and a branch here")
 end

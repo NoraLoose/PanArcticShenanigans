@@ -60,7 +60,7 @@ To check the sections on the grid (e.g. after changing the grid or a section), p
 
 ## Validation
 
-Comparisons with GLORYS, the World Ocean Atlas 2023 and gateway transports (Tsubouchi et al., 2018): heat, salt and freshwater content and temperature and salinity profiles by region, and transports. One command computes what is missing and makes the figures:
+Comparisons with GLORYS, the World Ocean Atlas 2023, observed profiles (TSAR) and gateway transports (Tsubouchi et al., 2018): heat, salt and freshwater content and temperature and salinity profiles by region, and transports. One command computes what is missing and makes the figures:
 
 ```bash
 julia +1.13 --project=. analysis/compare_with_validation.jl [config.toml]

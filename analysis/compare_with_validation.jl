@@ -4,7 +4,8 @@
 #   julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml ...   (several runs)
 #
 # Runs only the steps whose results are missing or out of date, each with its own script (which can also be run alone):
-#   1. the validation datasets' regional diagnostics, if not there yet (analysis/validation_diagnostics.jl WOA23)
+#   1. the validation datasets' regional diagnostics, if not there yet (analysis/validation_diagnostics.jl WOA23, TSAR,
+#      and UDASH for the run's years)
 #   2. GLORYS on the run's days: regional diagnostics and transports (analysis/validation_diagnostics.jl GLORYS --run)
 #   3. the run's regional diagnostics, if missing or older than its output (analysis/regional_diagnostics.jl)
 #   4. the figures (in figure_dir): plotting/regional_diagnostics.jl, plotting/gateway_transports.jl, and
@@ -47,6 +48,13 @@ has(dataset, set, period) = isfile(period_file(dataset, set, period))
 haskey(validation["datasets"], "WOA23") &&
     !all(has("WOA23", set, decade) for set in set_names, decade in keys(dataset_options("WOA23")["decades"])) &&
     step("WOA23 climatologies", "analysis/validation_diagnostics.jl", "WOA23")
+haskey(validation["datasets"], "TSAR") && "TSAR" in set_names && isempty(period_files("TSAR", "TSAR")) &&
+    step("TSAR observed profiles", "analysis/validation_diagnostics.jl", "TSAR")
+
+# UDASH: the run's years
+run_years = unique(year.(run_days))
+haskey(validation["datasets"], "UDASH") && !all(has("UDASH", set, y) for set in set_names, y in run_years) &&
+    step("UDASH profiles of the run's years", "analysis/validation_diagnostics.jl", "UDASH", "--run", config_file)
 
 # 2. GLORYS on the run's days
 glorys_done = all(has("GLORYS", set, day) for set in set_names, day in run_days) &&

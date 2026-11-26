@@ -22,3 +22,14 @@ depth_bounds          = [100, 200, 300, 500, 700, 1000, 2000]   # content from t
 # World Ocean Atlas 2023 climatologies on their own 0.25° grid (validation/woa23.jl): each decade's code and the years it
 # stands for, through which its monthly climatology repeats every year in the plots.
 decades = { "8594" = [1985, 1994], "95A4" = [1995, 2004], "A5B4" = [2005, 2014], "B5C2" = [2015, 2022] }
+
+[datasets.TSAR]
+# Observed annual-mean profiles of the 4 TSAR regions, 1970–2017 (Muilwijk et al., 2022; Polyakov et al., 2020;
+# validation/tsar.jl): profiles only, no contents. Downloaded from the NSF Arctic Data Center into
+# <validation_dir>/TSAR/raw.
+
+[datasets.UDASH]
+# Monthly mean profiles by region from UDASH (Behrendt et al., 2018), 1980–2015 (validation/udash.jl): profiles only,
+# averaged over profiles, with their counts; no contents. The yearly files are downloaded from PANGAEA into
+# <validation_dir>/UDASH/raw. The years to compute without --run (with it, the run's years):
+years = [1980, 2015]
