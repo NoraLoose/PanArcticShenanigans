@@ -16,7 +16,8 @@ Several runs go in the same figures, told apart by their experiment names:
 julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml
 ```
 
-Their figures go to a folder `compare_<a>_<b>` in the figure folder. The
+Their figures go to a folder `compare_<a>_<b>` in the figure folder. `--colors red,royalblue` sets the runs' colours, in
+the order of the config files. The
 first time, it downloads WOA23 (about 75 GB transferred, 7 GB kept) and computes GLORYS for the run's days; after
 that, a new run of the same period only needs its own diagnostics. Set `validation_dir` (where datasets and their
 diagnostics go) in your `paths_local.toml` (see the main [README](../README.md)).
