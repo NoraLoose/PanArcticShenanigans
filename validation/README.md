@@ -9,7 +9,14 @@ profiles by region, and transports through the gateways.
 julia +1.13 --project=. analysis/compare_with_validation.jl config_myname.toml
 ```
 
-This computes whatever is missing (the datasets' diagnostics, the run's own) and writes the figures to `figure_dir`. The
+This computes whatever is missing (the datasets' diagnostics, the run's own) and writes the figures to `figure_dir`.
+Several runs go in the same figures, told apart by their experiment names:
+
+```bash
+julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml
+```
+
+Their figures go to a folder `compare_<a>_<b>` in the figure folder. The
 first time, it downloads WOA23 (about 75 GB transferred, 7 GB kept) and computes GLORYS for the run's days; after
 that, a new run of the same period only needs its own diagnostics. Set `validation_dir` (where datasets and their
 diagnostics go) in your `paths_local.toml` (see the main [README](../README.md)).
@@ -45,8 +52,8 @@ dataset's grid. `julia +1.13 --project=. plotting/regions.jl config.toml` draws 
 
 | File (in `figure_dir`) | Shows |
 |---|---|
-| `regional_{heat,freshwater,salt}_content_<set>.png` | content by region over the run: model, GLORYS, each WOA23 decade |
-| `regional_{temperature,salinity}_profiles_<set>.png` | mean profiles by region: model and GLORYS on the first and last day, WOA23 per decade |
+| `regional_{heat,freshwater,salt}_content_<set>.png` | content by region over the run: the run(s), GLORYS, each WOA23 decade |
+| `regional_{temperature,salinity}_profiles_<set>.png` | mean profiles by region: model and GLORYS on the first and last day (several runs: each run's last day), WOA23 per decade |
 | `gateway_transports.png` | volume, heat and freshwater through each section: model and GLORYS |
 | `tsubouchi_comparison.png`, `tsubouchi_comparison.md` (in `output_dir`) | monthly gateway transports against Tsubouchi et al. (2018), for runs in Sep 2005 – Aug 2006 |
 

@@ -1,6 +1,7 @@
 # Everything needed to compare a run with the validation datasets, in one command (see validation/README.md):
 #
 #   julia +1.13 --project=. analysis/compare_with_validation.jl [config.toml]
+#   julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml ...   (several runs)
 #
 # Runs only the steps whose results are missing or out of date, each with its own script (which can also be run alone):
 #   1. the validation datasets' regional diagnostics, if not there yet (analysis/validation_diagnostics.jl WOA23)
@@ -8,7 +9,9 @@
 #   3. the run's regional diagnostics, if missing or older than its output (analysis/regional_diagnostics.jl)
 #   4. the figures (in figure_dir): plotting/regional_diagnostics.jl, plotting/gateway_transports.jl, and
 #      analysis/tsubouchi_comparison.jl if the run overlaps Tsubouchi et al.'s Sep 2005 - Aug 2006
-# Needs no GPU. Each step is a separate Julia process, so a step that fails leaves the results of the others.
+# With several runs, steps 1-3 are done for each, and the figures show them all together (in a folder
+# compare_<experiment>_<experiment>... in the figure folder). Needs no GPU. Each step is a separate Julia process, so a
+# step that fails leaves the results of the others.
 
 include("../config.jl")
 include("../transports.jl")
@@ -17,6 +20,18 @@ include("../validation_config.jl")
 using Dates
 
 repo = joinpath(@__DIR__, "..")
+config_files = filter(endswith(".toml"), ARGS)
+figures_wanted = !("--no-figures" in ARGS)
+
+# Several runs: steps 1-3 for each (this script, without figures), then the figures of all of them
+if length(config_files) > 1
+    for file in config_files
+        run(`$(Base.julia_cmd()) --project=$repo $(@__FILE__) $file --no-figures`)
+    end
+    run(`$(Base.julia_cmd()) --project=$repo $(joinpath(repo, "plotting", "regional_diagnostics.jl")) $config_files`)
+    @info "Figures of $(length(config_files)) runs in the figure folder's compare_... folder"
+    exit()
+end
 julia_script(script, args...) = `$(Base.julia_cmd()) --project=$repo $(joinpath(repo, script)) $args`
 
 function step(description, script, args...)
@@ -46,6 +61,7 @@ any(outdated(regional_output_file(set)) for set in set_names) &&
     step("The run's regional diagnostics", "analysis/regional_diagnostics.jl", config_file)
 
 # 4. Figures
+figures_wanted || exit()
 step("Regional figures", "plotting/regional_diagnostics.jl", config_file)
 isfile(transport_output_file) ? step("Gateway transports", "plotting/gateway_transports.jl", config_file) :
                                 @info "No online transports ($transport_output_file): no gateway figure"

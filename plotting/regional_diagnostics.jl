@@ -1,24 +1,28 @@
-# A run's regional diagnostics (arctic_regional_diagnostics_<set>.jld2, from analysis/regional_diagnostics.jl) against
-# those of the validation datasets in <validation_dir> (analysis/validation_diagnostics.jl), one panel per region, for
-# each region set of validation.toml. Writes to `figure_dir`, for each set (e.g. _pan, _tsar):
+# One or more runs' regional diagnostics (arctic_regional_diagnostics_<set>.jld2, from analysis/regional_diagnostics.jl)
+# against those of the validation datasets in <validation_dir> (analysis/validation_diagnostics.jl), one panel per
+# region, for each region set of validation.toml. Writes to `figure_dir` (for several runs, to a folder
+# compare_<experiment>_<experiment>... in the figure folder), for each set (e.g. _pan, _tsar):
 #   regional_heat_content_<set>.png, regional_freshwater_content_<set>.png, regional_salt_content_<set>.png
 #       heat content, freshwater content down to the isohaline, and salt content; heat and salt over the whole water
-#       column, or down to `content_depth`. The run's averages are drawn at the middle of their windows, GLORYS's daily
+#       column, or down to `content_depth`. Each run's averages are drawn at the middle of their windows, GLORYS's daily
 #       means at noon of their day, and each WOA23 decade's monthly climatology as a step over every month of the years
 #       it stands for (seasonal for the decades without monthly ones). The regions of the different grids differ
 #       slightly in volume (coasts, sea floor), so their contents differ by an offset as well.
 #   regional_temperature_profiles_<set>.png, regional_salinity_profiles_<set>.png
-#       the mean profiles of the run and GLORYS on the run's first and last day, and the annual climatology of each WOA23
-#       decade
+#       the mean profiles of the run and GLORYS on the run's first and last day (with several runs, each run's last day),
+#       and the annual climatology of each WOA23 decade
 # A dataset without diagnostics for the set, or for the run's days, is left out (with a warning).
 #
 #   julia +1.13 --project=. analysis/regional_diagnostics.jl [config.toml]
 #   julia +1.13 --project=. plotting/regional_diagnostics.jl [config.toml]
+#   julia +1.13 --project=. plotting/regional_diagnostics.jl config_a.toml config_b.toml ...   (several runs)
+#
+# The runs are told apart by their experiment names; their time axis is days since the earliest start.
 
 include("../config.jl")
 include("../validation_config.jl")
 
-using CairoMakie, Dates, JLD2
+using CairoMakie, Dates, JLD2, TOML
 
 content_depth = Inf   # heat and salt content from the surface down to this depth (m): one of validation.toml's
                       # depth_bounds, or Inf for the whole water column
@@ -41,8 +45,26 @@ end
 
 settings_of(d) = (d.reference_temperature, d.reference_salinity, d.depth_bounds)
 
-# The run's diagnostics of a set, with its dates as DateTime
-read_run(set) = (d = read_entries(regional_output_file(set)); merge(d, (; dates = DateTime.(d.dates))))
+# The runs: every config file on the command line (config.jl reads the first)
+config_files = isempty(ARGS) ? [config_file] : filter(endswith(".toml"), ARGS)
+configs      = [TOML.parsefile(file) for file in config_files]
+experiments  = [get(c, "experiment", splitext(basename(f))[1]) for (c, f) in zip(configs, config_files)]
+allunique(experiments) || error("The runs need different experiment names: $experiments")
+run_colors   = [:red, :darkgoldenrod, :saddlebrown, :darkcyan, :deeppink, :olive]   # apart from WOA23's colours
+length(configs) ≤ length(run_colors) || error("At most $(length(run_colors)) runs in one figure")
+
+# Figures: the run's figure folder, or for several runs a folder named after them
+figures = length(configs) == 1 ? figure_dir : mkpath(joinpath(paths["figure_dir"], "compare_" * join(experiments, "_")))
+title   = join(experiments, ", ")
+
+# A run's diagnostics of a set, with its dates as DateTime, its start, and its averaging window
+function read_run(c, experiment, set)
+    file = joinpath(paths["output_dir"], get(c, "experiment", ""), "arctic_regional_diagnostics_$(lowercase(set)).jld2")
+    isfile(file) || error("No $file: run analysis/regional_diagnostics.jl for $experiment first")
+    d = read_entries(file)
+    return merge(d, (; dates = DateTime.(d.dates), start = DateTime(c["time"]["start_date"]),
+                       window = Millisecond(round(Int, d.average_hours * 3600_000)), experiment))
+end
 
 # A dataset's diagnostics of a set: its regions and settings (regions.jld2), and each period's diagnostics, with the
 # period's own regions and levels where it has them; `nothing` without any
@@ -56,7 +78,7 @@ function read_dataset(dataset, set, run)
     return isempty(periods) ? nothing : periods
 end
 
-# Daily periods (GLORYS) within the run, joined along time: dates and the diagnostics with time last
+# Daily periods (GLORYS) within [first_day, last_day), joined along time: dates and the diagnostics with time last
 function join_days(periods, first_day, last_day)
     days = filter(p -> first_day ≤ DateTime(only(p.dates)) < last_day, periods)
     isempty(days) && return nothing
@@ -71,25 +93,30 @@ panel(fig, r, n) = fig[fldmod1(r, columns(n))...]
 figure_size(n) = (300 * columns(n), 280 * cld(n, columns(n)) + 60)
 
 for set in region_set_names(validation)
-    run = read_run(set)
+    runs = [read_run(c, e, set) for (c, e) in zip(configs, experiments)]
+    run  = first(runs)
+    all(settings_of(r) == settings_of(run) && r.regions_codes == run.regions_codes for r in runs) ||
+        error("The runs' regional diagnostics ($set) were computed with different settings or regions")
     codes, names = run.regions_codes, run.regions_names
     R = length(codes)
 
-    start  = DateTime(config["time"]["start_date"])
-    window = Millisecond(round(Int, run.average_hours * 3600_000))
+    start = minimum(r.start for r in runs)   # the time axis: days since the earliest start
     days(dates) = Dates.value.(dates .- start) ./ 86400_000
-    first_day, last_day = minimum(run.dates), maximum(run.dates) + window   # the span of the run's averages
+    spans = [(minimum(r.dates), maximum(r.dates) + r.window) for r in runs]   # each run's averages
+    first_day, last_day = minimum(first.(spans)), maximum(last.(spans))
 
     glorys_periods = read_dataset("GLORYS", set, run)
     glorys = isnothing(glorys_periods) ? nothing : join_days(glorys_periods, first_day, last_day)
-    isnothing(glorys) && @warn "No GLORYS diagnostics ($set) for the run's days: analysis/validation_diagnostics.jl GLORYS --run $config_file"
+    isnothing(glorys) && @warn "No GLORYS diagnostics ($set) for the runs' days: analysis/validation_diagnostics.jl GLORYS --run <config>"
     woa  = something(read_dataset("WOA23", set, run), [])
     isempty(woa) && @warn "No WOA23 diagnostics ($set): analysis/validation_diagnostics.jl WOA23"
     woa_colors = Makie.wong_colors()[[1, 3, 4, 6, 2, 5]]
 
-    # The run's first and last day, and the GLORYS day of each
-    run_days = Date.(run.dates)
     glorys_index(day) = isnothing(glorys) ? nothing : findfirst(==(day), Date.(glorys.dates))
+    # The days whose profiles are drawn: one run's first and last day; with several runs, each run's last day
+    profile_days(r) = length(runs) == 1 ? ((Date(first(r.dates)), :dash), (Date(last(r.dates)), :solid)) :
+                                          ((Date(last(r.dates)), :solid),)
+    run_label(r, day) = length(runs) == 1 ? "model $day" : "$(r.experiment) $day"
 
     bound(d) = findfirst(==(content_depth), d.depth_bounds)
     isnothing(bound(run)) && error("content_depth = $content_depth is not one of the depth bounds $(run.depth_bounds)")
@@ -99,11 +126,11 @@ for set in region_set_names(validation)
                                                                    d -> d.freshwater_isohaline ./ 1e9),
                 ("salt",       "salt content, $depth_label (Gt)",  d -> d.salt[bound(run), :, :] ./ 1e12)]
 
-    # A WOA decade's months through the years it stands for, within the run: (segment ends in days, month)
+    # A WOA decade's months through the years it stands for, within each run: (segment ends in days, month)
     function woa_steps(d)
         steps = Tuple{Float64, Float64, Int}[]
-        for year in first(d.years):last(d.years), month in 1:12
-            a, b = max(DateTime(year, month), first_day), min(DateTime(year, month) + Month(1), last_day)
+        for (from, to) in spans, year in first(d.years):last(d.years), month in 1:12
+            a, b = max(DateTime(year, month), from), min(DateTime(year, month) + Month(1), to)
             a < b && push!(steps, (days(a), days(b), month))
         end
         return steps
@@ -121,14 +148,17 @@ for set in region_set_names(validation)
                 linesegments!(ax, [Point2f(t, vw[r, m]) for (a, b, m) in steps for t in (a, b)];
                               color = woa_colors[k], linewidth = 3, label = woa_label(d))
             end
-            lines!(ax, days(run.dates .+ window / 2), value(run)[r, :]; color = :red, label = "model")
+            for (k, run) in enumerate(runs)
+                lines!(ax, days(run.dates .+ run.window / 2), value(run)[r, :]; color = run_colors[k],
+                       label = length(runs) == 1 ? "model" : run.experiment)
+            end
             isnothing(glorys) ||
                 scatter!(ax, days(glorys.dates .+ Hour(12)), value(glorys)[r, :]; color = :black, marker = :diamond,
                          label = "GLORYS")
             r == 1 && axislegend(ax; position = :lb, framevisible = false, merge = true, labelsize = 10)
         end
-        Label(fig[0, :], "$experiment, $set regions: $label"; fontsize = 18)
-        file = joinpath(figure_dir, "regional_$(name)_content_$(lowercase(set)).png")
+        Label(fig[0, :], "$title, $set regions: $label"; fontsize = 18)
+        file = joinpath(figures, "regional_$(name)_content_$(lowercase(set)).png")
         save(file, fig)
         @info "Wrote $file"
     end
@@ -145,10 +175,10 @@ for set in region_set_names(validation)
                 lines!(ax, getfield(d, Symbol("annual_$field"))[:, r], d.level_depths; color = woa_colors[k], linewidth = 1.5)
                 entry!(woa_label(d), LineElement(color = woa_colors[k], linewidth = 1.5))
             end
-            for (day, style) in ((first(run_days), :dash), (last(run_days), :solid))
-                lines!(ax, getfield(run, field)[:, r, findfirst(==(day), run_days)], run.level_depths;
-                       color = :red, linestyle = style)
-                entry!("model $day", LineElement(color = :red, linestyle = style))
+            for (k, run) in enumerate(runs), (day, style) in profile_days(run)
+                lines!(ax, getfield(run, field)[:, r, findfirst(==(day), Date.(run.dates))], run.level_depths;
+                       color = run_colors[k], linestyle = style)
+                entry!(run_label(run, day), LineElement(color = run_colors[k], linestyle = style))
                 g = glorys_index(day)
                 isnothing(g) && continue
                 lines!(ax, getfield(glorys, field)[:, r, g], glorys.level_depths; color = :black, linestyle = style)
@@ -157,8 +187,8 @@ for set in region_set_names(validation)
         end
         Legend(fig[cld(R, columns(R)) + 1, :], last.(legend), first.(legend); orientation = :horizontal, nbanks = 2,
                framevisible = false, labelsize = 11)
-        Label(fig[0, :], "$experiment, $set regions: mean $label"; fontsize = 18)
-        file = joinpath(figure_dir, "regional_$(name)_profiles_$(lowercase(set)).png")
+        Label(fig[0, :], "$title, $set regions: mean $label"; fontsize = 18)
+        file = joinpath(figures, "regional_$(name)_profiles_$(lowercase(set)).png")
         save(file, fig)
         @info "Wrote $file"
     end
