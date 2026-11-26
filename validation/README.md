@@ -10,17 +10,18 @@ julia +1.13 --project=. analysis/compare_with_validation.jl config_myname.toml
 ```
 
 This computes whatever is missing (the datasets' diagnostics, the run's own) and writes the figures to `figure_dir`.
+The first time, it downloads WOA23 (about 75 GB transferred, 7 GB kept) and computes GLORYS for the run's days; after
+that, a new run of the same period only needs its own diagnostics. Set `validation_dir` (where datasets and their
+diagnostics go) in your `paths_local.toml` (see the main [README](../README.md)).
+
 Several runs go in the same figures, told apart by their experiment names:
 
 ```bash
-julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml
+julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml --colors red,royalblue
 ```
 
-Their figures go to a folder `compare_<a>_<b>` in the figure folder. `--colors red,royalblue` sets the runs' colours, in
-the order of the config files. The
-first time, it downloads WOA23 (about 75 GB transferred, 7 GB kept) and computes GLORYS for the run's days; after
-that, a new run of the same period only needs its own diagnostics. Set `validation_dir` (where datasets and their
-diagnostics go) in your `paths_local.toml` (see the main [README](../README.md)).
+Each run gets its own figures as above, and the regional figures of all of them go to a folder `compare_<a>_<b>` in
+the figure folder. `--colors` (optional) sets the runs' colours, in the order of the config files.
 
 ## Datasets
 
