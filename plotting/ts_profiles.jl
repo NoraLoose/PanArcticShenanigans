@@ -5,7 +5,8 @@
 #   temperature_profiles_<set>.png, salinity_profiles_<set>.png
 #       the mean over the period of each run's averages and of GLORYS's daily means, and of the WOA23 decades whose
 #       years overlap the period: their monthly climatologies of the period's months, weighted by the period's days in
-#       each month
+#       each month; the observed annual-mean profiles (TSAR) of the period's years, and UDASH's mean of the profiles in
+#       the region over the period's months (with the largest number of profiles on a level; levels without any left out)
 # The period is --from up to, not including, --to (dates); by default all of the runs' days. A dataset without profiles
 # for the set or the period is left out (with a warning).
 #
@@ -69,6 +70,30 @@ for set in region_set_names(validation)
     woa_mean(d, field) = finite_mean(stack(getfield(d, field)[:, :, m] for m in months), weights[months])
     month_label = join(Dates.monthabbr.(months), ", ")
 
+    tsar = read_dataset("TSAR", "ts_profiles", set)
+    udash_periods = read_dataset("UDASH", "ts_profiles", set)
+
+    # UDASH's monthly mean profiles over the period's months, weighted by their numbers of profiles: (; temperature,
+    # salinity, n_temperature, n_salinity, level_depths, label) with the profiles' count per level, or nothing
+    function udash_over_period()
+        isnothing(udash_periods) && return nothing
+        chosen = [(p, m) for p in udash_periods for (m, d) in enumerate(p.dates)
+                  if from < DateTime(d) + Month(1) && DateTime(d) < to]
+        isempty(chosen) && return nothing
+        function combine(field, count)   # each month's mean weighted by its number of profiles
+            n = sum(getfield(p, count)[:, :, m] for (p, m) in chosen)
+            total = sum(replace(getfield(p, field)[:, :, m], NaN => 0.0) .* getfield(p, count)[:, :, m] for (p, m) in chosen)
+            return ifelse.(n .> 0, total ./ max.(n, 1), NaN), n
+        end
+        θ, nθ = combine(:temperature, :n_temperature)
+        S, nS = combine(:salinity, :n_salinity)
+        label = join(unique(Dates.format(DateTime(p.dates[m]), "u yyyy") for (p, m) in chosen), ", ")
+        return (; temperature = θ, salinity = S, n_temperature = nθ, n_salinity = nS,
+                  level_depths = first(udash_periods).level_depths, label)
+    end
+    udash = udash_over_period()
+    isnothing(udash) && @info "No UDASH profiles ($set) in $period: analysis/validation_diagnostics.jl UDASH --run <config>"
+
     for (name, label, field) in (("temperature", "temperature (°C)", :temperature), ("salinity", "salinity (g/kg)", :salinity))
         fig = Figure(size = figure_size(R) .+ (0, 150))
         legend = Pair{String, Any}[]   # the figure's legend: every line drawn in any panel, once
@@ -82,6 +107,25 @@ for set in region_set_names(validation)
             if !isnothing(glorys)
                 lines!(ax, finite_mean(getfield(glorys, field))[:, r], glorys.level_depths; color = :black)
                 entry!("GLORYS", LineElement(color = :black))
+            end
+            if !isnothing(tsar)
+                for p in tsar, (n, y) in enumerate(p.dates)
+                    parse(Int, y) in years || continue
+                    lines!(ax, getfield(p, field)[:, r, n], p.level_depths; color = :darkgreen, linewidth = 2)
+                    entry!("TSAR $y, annual mean", LineElement(color = :darkgreen, linewidth = 2))
+                end
+            end
+            if !isnothing(udash)
+                n = getfield(udash, Symbol("n_$field"))[:, r]
+                if any(n .> 0)
+                    observed = n .> 0
+                    scatterlines!(ax, getfield(udash, field)[observed, r], udash.level_depths[observed]; color = :purple,
+                                  markersize = 5, linewidth = 1.5)
+                    text!(ax, 0.98, 0.02; text = "UDASH: $(maximum(n)) profiles", space = :relative,
+                          align = (:right, :bottom), fontsize = 10, color = :purple)
+                    entry!("UDASH $(udash.label), mean of the profiles", [LineElement(color = :purple, linewidth = 1.5),
+                                                                          MarkerElement(color = :purple, marker = :circle, markersize = 5)])
+                end
             end
             for (k, run) in enumerate(runs)
                 n = within(run)

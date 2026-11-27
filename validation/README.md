@@ -30,7 +30,7 @@ the figure folder. `--colors` (optional) sets the runs' colours, in the order of
 
 | Step | Script | Computes | Kept in | Shared by |
 |---|---|---|---|---|
-| 1 | `analysis/validation_diagnostics.jl <dataset>` | a dataset's contents and profiles on its own grid (WOA23 once; GLORYS for the run's days, with its transports through the sections) | `<validation_dir>/<dataset>/` | all runs |
+| 1 | `analysis/validation_diagnostics.jl <dataset>` | a dataset's contents and profiles on its own grid (WOA23 once; GLORYS for the run's days, with its transports through the sections), or its observed profiles (TSAR once, UDASH for the run's years) | `<validation_dir>/<dataset>/` | all runs |
 | 2 | `analysis/ocean_diagnostics.jl config.toml` | the run's contents and profiles, from its daily averages | `diagnostics_dir` or `output_dir` | this run |
 | 3 | `plotting/*.jl config.toml` | the figures, from the saved results (nothing is recomputed) | `figure_dir` | |
 
@@ -39,6 +39,8 @@ in a CPU job, to redo only the figures, or to debug one dataset:
 
 ```bash
 julia +1.13 --project=. analysis/validation_diagnostics.jl WOA23
+julia +1.13 --project=. analysis/validation_diagnostics.jl TSAR
+julia +1.13 --project=. analysis/validation_diagnostics.jl UDASH --run config.toml    # or all years without --run
 julia +1.13 --project=. analysis/validation_diagnostics.jl GLORYS --run config.toml   # or --from 1993-01-01 --to 1993-02-01
 julia +1.13 --project=. analysis/ocean_diagnostics.jl config.toml
 julia +1.13 --project=. plotting/ocean_content.jl config.toml
@@ -53,21 +55,28 @@ julia +1.13 --project=. analysis/tsubouchi_comparison.jl config.toml
 |---|---|---|---|---|---|
 | GLORYS | Copernicus GLORYS12 reanalysis, daily means | 1993–present: the run's days | 1/12°, 50 levels | contents, profiles, transports | [validation.toml](../validation.toml) |
 | WOA23 | NOAA World Ocean Atlas 2023, climatologies (Reagan et al., 2024) | 1985–94, 1995–2004, 2005–14, 2015–22 | 0.25°, 102 levels | contents, profiles | [validation.toml](../validation.toml) |
+| TSAR | observed annual-mean profiles (Muilwijk et al., 2022; Polyakov et al., 2020) | 1970–2017 | regional means, 1–998 m | profiles (TSAR regions) | [validation.toml](../validation.toml) |
+| UDASH | hydrographic profiles from ships, drifting stations, floats, moorings (Behrendt et al., 2018) | 1980–2015, monthly | regional means of profiles, to 2000 m | profiles, with counts | [validation.toml](../validation.toml) |
 | Tsubouchi2018 | mooring-based gateway transports (Tsubouchi et al., 2018) | Sep 2005 – Aug 2006, monthly | 4 gateways | transports | [references/](references) |
 
 The gridded datasets (GLORYS, WOA23) go through the model's own code on their own grids, over the part inside the model
 domain: their regions follow their own coasts and sea floor, so their contents differ from the model's by a small
 offset as well. WOA23 at 0.25° has no monthly climatologies for 1985–94 and 1995–2004; those use the seasonal ones.
 
+UDASH's monthly means average the profiles that happen to be in a region, so they show only where and when it was
+observed: read them with their profile counts. They give no heat or freshwater content.
+
 Every dataset is downloaded by the code from where it is published (GLORYS from Copernicus Marine with your login; WOA23
-from NOAA NCEI), into `<validation_dir>/<dataset>/raw`. A copy you already have can be linked there instead.
+from NOAA NCEI; UDASH from PANGAEA, which keeps it on tape, so the first download of a year waits a few minutes), into
+`<validation_dir>/<dataset>/raw`. A copy you already have can be linked there instead (e.g. the UDASH yearly
+`ArcticOcean_phys_oce_<year>.txt`); TSAR comes from the NSF Arctic Data Center.
 
 ## Regions
 
 | Region set | Regions | Covers |
 |---|---|---|
 | PAN | 15 sub-basins, adapted from hycom-validation | the whole domain, without overlaps |
-| TSAR | 4 boxes: Western and Eastern Eurasian Basin, Chukchi Sea, Beaufort Gyre (Muilwijk et al., 2022) | where observed profiles are averaged |
+| TSAR | 4 boxes: Western and Eastern Eurasian Basin, Chukchi Sea, Beaufort Gyre | where the TSAR profiles are |
 
 Defined by longitude, latitude and bottom depth only (`diagnostics/regions.jl`), so they work for any grid spacing and on each
 dataset's grid. `julia +1.13 --project=. plotting/regions.jl config.toml` draws them on a run's grid.
@@ -77,7 +86,7 @@ dataset's grid. `julia +1.13 --project=. plotting/regions.jl config.toml` draws 
 | File (in `figure_dir`) | Shows |
 |---|---|
 | `{heat,freshwater,salt}_content_<set>.png` | content by region over the run: the run(s), GLORYS, each WOA23 decade |
-| `{temperature,salinity}_profiles_<set>.png` | mean profiles by region over a period (`--from`, `--to`; by default the runs' days): the run(s), GLORYS, and WOA23's months of that period from the overlapping decade(s) |
+| `{temperature,salinity}_profiles_<set>.png` | mean profiles by region over a period (`--from`, `--to`; by default the runs' days): the run(s), GLORYS, WOA23's months of that period from the overlapping decade(s), TSAR for the period's years, UDASH for its months |
 | `gateway_transports.png` | volume, heat and freshwater through each section: model and GLORYS |
 | `tsubouchi_comparison.png`, `tsubouchi_comparison.md` (in `output_dir`) | monthly gateway transports against Tsubouchi et al. (2018), for runs in Sep 2005 – Aug 2006 |
 
@@ -105,11 +114,13 @@ computed or not drawn.
 For a new dataset:
 
 1. A reader in `validation/<dataset>.jl`. For a gridded dataset, a function that builds an Oceananigans grid of its
-   cells and sets T and S for each period, then passes them to each family of `diagnostics/` (see `woa23.jl`).
+   cells and sets T and S for each period, then passes them to each family of `diagnostics/` (see `woa23.jl`). For
+   profiles that are already regional means, one that stores them as `ts_profiles` (see `tsar.jl`).
 2. A `[datasets.<dataset>]` section in `validation.toml`, with its options.
 3. A line for it in `analysis/validation_diagnostics.jl` (and in `analysis/compare_with_validation.jl`), and a row in
    the table above.
-4. Its lines in `plotting/ocean_content.jl` and `plotting/ts_profiles.jl`, read like GLORYS's or WOA23's.
+4. Its lines in `plotting/ocean_content.jl` and/or `plotting/ts_profiles.jl`, read like GLORYS's or WOA23's (contents
+   and profiles) or TSAR's (profiles only).
 
 For a new family of diagnostics (e.g. sea ice): its computing file in `diagnostics/`, used for the run and for the
 datasets alike; its `analysis/` script for a run and its `plotting/` script; the readers of the datasets that give it;

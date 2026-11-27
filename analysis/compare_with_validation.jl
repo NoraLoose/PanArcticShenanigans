@@ -7,7 +7,8 @@
 #       (the period of the mean profiles; by default all of the runs' days)
 #
 # Runs only the steps whose results are missing or out of date, each with its own script (which can also be run alone):
-#   1. the validation datasets' contents and profiles, if not there yet (analysis/validation_diagnostics.jl WOA23)
+#   1. the validation datasets' contents and profiles, if not there yet (analysis/validation_diagnostics.jl WOA23, TSAR,
+#      and UDASH for the run's years)
 #   2. GLORYS on the run's days: contents, profiles and transports (analysis/validation_diagnostics.jl GLORYS --run)
 #   3. the run's contents and profiles, if missing or older than its output (analysis/ocean_diagnostics.jl)
 #   4. the figures (in figure_dir): plotting/ocean_content.jl, plotting/ts_profiles.jl, plotting/gateway_transports.jl,
@@ -51,12 +52,20 @@ end
 
 set_names = region_set_names(validation)
 run_days  = Date(config["time"]["start_date"]):Day(1):Date(DateTime(config["time"]["end_date"]) - Millisecond(1))
-has(dataset, set, period) = all(isfile(period_file(dataset, family, set, period)) for family in ("ocean_content", "ts_profiles"))
+has(dataset, set, period; families = ("ocean_content", "ts_profiles")) =
+    all(isfile(period_file(dataset, family, set, period)) for family in families)
 
 # 1. Datasets that do not depend on the run
 haskey(validation["datasets"], "WOA23") &&
     !all(has("WOA23", set, decade) for set in set_names, decade in keys(dataset_options("WOA23")["decades"])) &&
     step("WOA23 climatologies", "analysis/validation_diagnostics.jl", "WOA23")
+haskey(validation["datasets"], "TSAR") && "TSAR" in set_names && isempty(period_files("TSAR", "ts_profiles", "TSAR")) &&
+    step("TSAR observed profiles", "analysis/validation_diagnostics.jl", "TSAR")
+
+# UDASH: the run's years
+run_years = unique(year.(run_days))
+haskey(validation["datasets"], "UDASH") && !all(has("UDASH", set, y; families = ("ts_profiles",)) for set in set_names, y in run_years) &&
+    step("UDASH profiles of the run's years", "analysis/validation_diagnostics.jl", "UDASH", "--run", config_file)
 
 # 2. GLORYS on the run's days
 glorys_done = all(has("GLORYS", set, day) for set in set_names, day in run_days) &&
