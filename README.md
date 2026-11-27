@@ -58,6 +58,16 @@ Volume, heat, salt and freshwater transports through Fram Strait, the Barents Se
 
 To check the sections on the grid (e.g. after changing the grid or a section), plot their faces on the bathymetry with `plotting/transport_sections.jl`.
 
+## Validation
+
+Comparisons with GLORYS, the World Ocean Atlas 2023 and gateway transports (Tsubouchi et al., 2018): heat, salt and freshwater content and temperature and salinity profiles by region, and transports. One command computes what is missing and makes the figures:
+
+```bash
+julia +1.13 --project=. analysis/compare_with_validation.jl [config.toml]
+```
+
+See [validation/README.md](validation/README.md) for the datasets, regions and figures. The datasets go to `validation_dir` (in `paths.toml`); the shared settings are in [`validation.toml`](validation.toml).
+
 ## Figures and movies
 
 Plotting is separate from the model run. There is one script per figure or movie; each takes the same config file as `panarctic.jl` and writes to `figure_dir/<experiment>/` (default `figures/test/`), separate from the model output:

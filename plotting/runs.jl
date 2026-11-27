@@ -1,6 +1,6 @@
 # The runs of a plotting script of the regional diagnostics (plotting/ocean_content.jl, plotting/ts_profiles.jl): every
 # config file on the command line, their colours (--colors red,royalblue: Makie's colour names or hex like "#1f77b4", in
-# the order of the config files) and the figure folder (the run's own, or for several runs a folder
+# the order of the config files; otherwise a palette apart from WOA23's colours) and the figure folder (the run's own, or for several runs a folder
 # compare_<experiment>_<experiment>... in the figure folder). The runs are told apart by their experiment names.
 
 include("../config.jl")
@@ -12,9 +12,9 @@ config_files = isempty(ARGS) ? [config_file] : filter(endswith(".toml"), ARGS)  
 configs      = [TOML.parsefile(file) for file in config_files]
 experiments  = [get(c, "experiment", splitext(basename(f))[1]) for (c, f) in zip(configs, config_files)]
 allunique(experiments) || error("The runs need different experiment names: $experiments")
-colors_at    = findfirst(==("--colors"), ARGS)
-run_colors   = isnothing(colors_at) ? [:red, :darkgoldenrod, :saddlebrown, :darkcyan, :deeppink, :olive] :
-                                      [Makie.to_color(String(strip(c))) for c in split(ARGS[colors_at + 1], ",")]
+colors_option = command_line_option("colors")
+run_colors   = isnothing(colors_option) ? [:red, :darkgoldenrod, :saddlebrown, :darkcyan, :deeppink, :olive] :
+                                          [Makie.to_color(String(strip(c))) for c in split(colors_option, ",")]
 length(configs) ≤ length(run_colors) ||
     error("$(length(configs)) runs, but $(length(run_colors)) colours: give one per run with --colors")
 
@@ -54,3 +54,34 @@ function read_entries(path)
     end
     return (; entries...)
 end
+
+# ## The validation datasets' diagnostics (analysis/validation_diagnostics.jl)
+
+# A dataset's diagnostics `family` of a set: its regions and settings (regions.jld2), and each period's diagnostics, with
+# the period's own regions and levels where it has them; `nothing` without any. `same_settings(stored)` checks the
+# settings against the runs'.
+function read_dataset(dataset, family, set; same_settings = d -> true)
+    haskey(validation["datasets"], dataset) || return nothing
+    isfile(regions_file(dataset, family, set)) || return nothing
+    base = read_entries(regions_file(dataset, family, set))
+    same_settings(base) ||
+        @warn "$dataset's $family ($set) was computed with other settings than the runs': compute it again"
+    periods = [merge(base, read_entries(period_file(dataset, family, set, splitext(f)[1])))
+               for f in sort(period_files(dataset, family, set))]
+    return isempty(periods) ? nothing : periods
+end
+
+# Daily periods (GLORYS) within [first_day, last_day), joined along time: dates, levels and the fields `names`, time last
+function join_days(periods, first_day, last_day, names)
+    days = filter(p -> first_day ≤ DateTime(only(p.dates)) < last_day, periods)
+    isempty(days) && return nothing
+    along_time(name) = cat((getfield(p, name) for p in days)...; dims = ndims(getfield(first(days), name)))
+    level_depths = hasproperty(first(days), :level_depths) ? first(days).level_depths : nothing
+    return (; dates = [DateTime(only(p.dates)) for p in days], level_depths, (name => along_time(name) for name in names)...)
+end
+
+# Each run's span (its first average's start to its last one's end), and that of all runs
+run_spans(runs) = [(minimum(r.dates), maximum(r.dates) + r.window) for r in runs]
+
+woa_colors = Makie.wong_colors()[[1, 3, 4, 6, 2, 5]]
+woa_label(d) = "WOA23 $(first(d.years))–$(last(d.years))" * (d.monthly ? "" : " (seasonal)")
