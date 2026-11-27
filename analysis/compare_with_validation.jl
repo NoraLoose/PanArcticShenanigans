@@ -3,6 +3,8 @@
 #   julia +1.13 --project=. analysis/compare_with_validation.jl [config.toml]
 #   julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml ...   (several runs)
 #   julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml --colors red,royalblue
+#   julia +1.13 --project=. analysis/compare_with_validation.jl config.toml --from 1993-01-01 --to 1993-02-01
+#       (the period of the mean profiles; by default all of the runs' days)
 #
 # Runs only the steps whose results are missing or out of date, each with its own script (which can also be run alone):
 #   1. the validation datasets' contents and profiles, if not there yet (analysis/validation_diagnostics.jl WOA23, TSAR,
@@ -24,16 +26,19 @@ using Dates
 repo = joinpath(@__DIR__, "..")
 config_files = filter(endswith(".toml"), ARGS)
 figures_wanted = !("--no-figures" in ARGS)
+period_options = [x for name in ("from", "to") if !isnothing(command_line_option(name))   # of the mean profiles
+                  for x in ("--$name", command_line_option(name))]
 
 # Several runs: everything for each (this script, one run at a time), then the content and profile figures of all of them
 if length(config_files) > 1
     for file in config_files
-        run(`$(Base.julia_cmd()) --project=$repo $(@__FILE__) $file $(figures_wanted ? String[] : ["--no-figures"])`)
+        run(`$(Base.julia_cmd()) --project=$repo $(@__FILE__) $file $(figures_wanted ? String[] : ["--no-figures"])
+             $period_options`)
     end
     colors = command_line_option("colors")
     for script in ("ocean_content.jl", "ts_profiles.jl")
         run(`$(Base.julia_cmd()) --project=$repo $(joinpath(repo, "plotting", script)) $config_files
-             $(isnothing(colors) ? String[] : ["--colors", colors])`)
+             $(isnothing(colors) ? String[] : ["--colors", colors]) $(script == "ts_profiles.jl" ? period_options : String[])`)
     end
     @info "Each run's figures in its figure folder; those of all $(length(config_files)) runs in the compare_... folder"
     exit()
@@ -77,7 +82,7 @@ any(outdated(file(set)) for set in set_names, file in (ocean_content_file, ts_pr
 # 4. Figures
 figures_wanted || exit()
 step("Content figures", "plotting/ocean_content.jl", config_file)
-step("Profile figures", "plotting/ts_profiles.jl", config_file)
+step("Profile figures", "plotting/ts_profiles.jl", config_file, period_options...)
 isfile(transport_output_file) ? step("Gateway transports", "plotting/gateway_transports.jl", config_file) :
                                 @info "No online transports ($transport_output_file): no gateway figure"
 first(run_days) < Date(2006, 9, 1) && last(run_days) ≥ Date(2005, 9, 5) &&
