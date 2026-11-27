@@ -15,6 +15,10 @@
 
 using Oceananigans.Grids: λnode, φnode, topology, Periodic
 using Oceananigans.Architectures: on_architecture
+using TOML
+
+# The sections of the transports (sections.toml) bound some of the regions, so regions and transports always agree
+region_section(name) = TOML.parsefile(joinpath(@__DIR__, "sections.toml"))[name]
 
 # ## PAN
 #
@@ -51,14 +55,15 @@ in_boxes(λ, φ, boxes) = any(in_box(λ, φ, box) for box in boxes)
 #
 # EUBA and AMBA are the columns deeper than deep_basin_depth inside `arctic_ocean_boxes` that are connected (through such
 # columns) to the North Pole, with any shallower patches they enclose (rises on the ridges), and everything north of
-# Fram Strait (`fram_strait_box`, at the latitude of the Fram Strait transport section), so that Fram Strait is the
-# boundary of the Arctic basins against the Nordic Seas. South of 76°N the boxes cut the troughs into the Barents and
+# Fram Strait (`fram_strait_box`, north of the latitude of the fram_strait section in sections.toml), so that the Fram
+# Strait section is the boundary of the Arctic basins against the Nordic Seas. South of 76°N the boxes cut the troughs into the Barents and
 # Kara Seas (the St. Anna Trough reaches ~77°N); shallow sills elsewhere (Nares, Barrow and Bering Straits) keep out
 # Baffin Bay, the Archipelago and the Pacific. The Lomonosov Ridge (~140°E / ~25°W, as in regions_pan.py) splits them:
 # EUBA is the part in `eurasian_basin_boxes`.
 
 const deep_basin_depth = 500   # minimum bottom depth (m) of the Arctic basins EUBA and AMBA
-const fram_strait_box  = ((79, 90), (-45, 16))
+const fram_strait_latitude = only(unique(region_section("fram_strait")["lat"]))   # 78°50′N
+const fram_strait_box  = ((fram_strait_latitude, 90), (-45, 16))
 const arctic_ocean_boxes = [fram_strait_box,
                             ((76, 90), (16, 100)),     # Barents and Kara Seas, incl. the troughs into them
                             ((70, 90), (100, 180)),
@@ -67,25 +72,33 @@ const eurasian_basin_boxes = [((-90, 90), (-25, 140))]
 
 # ## Greenland-Scotland Ridge
 #
-# The southern boundary of the Nordic Seas, as (longitude, latitude) points joined by straight lines in longitude and
-# latitude: across Denmark Strait to Iceland, from Iceland along the Iceland-Faroe Ridge, across the Faroe Bank Channel
-# sill, along the Wyville Thomson Ridge to Scotland; then from Orkney and Shetland to Norway (against the North Sea).
+# The southern boundary of the Nordic Seas: the sections north_sea, iceland_scotland and denmark_strait of sections.toml
+# (from Norway north of Shetland to Scotland, along the Wyville Thomson and Iceland-Faroe Ridges to Iceland, across Iceland
+# and Denmark Strait to Greenland), so the Nordic Seas are what these transports flow into. Waypoints joined by great
+# circles as in the transports, extended over land along the latitude of their ends to 45°W in Greenland and 16°E in
+# Norway. `ridge_latitude` needs the waypoints in order of longitude along the whole ridge.
 
-const greenland_scotland_ridge = [(-45.0, 66.0),
-                                  (-22.0, 66.0),    # Denmark Strait, to northwest Iceland
-                                  (-13.5, 64.6),    # southeast Iceland
-                                  (-8.5, 62.3),     # Iceland-Faroe Ridge, northwest of the Faroes
-                                  (-8.4, 61.0),     # Faroe Bank Channel sill, to Faroe Bank
-                                  (-6.5, 60.2),     # Wyville Thomson Ridge
-                                  (-4.5, 59.2),     # north of Scotland
-                                  (-1.5, 60.0),     # Orkney to Shetland
-                                  (-1.0, 61.0),     # north of Shetland
-                                  (5.0, 62.0),      # Norway
-                                  (16.0, 62.0)]
+const greenland_scotland_ridge = let
+    ridge = unique(sort([(λ, φ) for name in ("denmark_strait", "iceland_scotland", "north_sea")
+                                for (λ, φ) in zip(region_section(name)["lon"], region_section(name)["lat"])]))
+    all(diff(first.(ridge)) .> 0) || error("The Greenland-Scotland Ridge sections in sections.toml must follow each other " *
+                                           "in longitude, without two waypoints at the same longitude")
+    ridge
+end
+const ridge_longitudes = (-45, 16)   # the ends of the ridge beyond the sections, on land
 
+# Latitude at longitude λ of the great circle through (λ₀, φ₀) and (λ₁, φ₁)
+great_circle_latitude(λ, (λ₀, φ₀), (λ₁, φ₁)) =
+    atand((tand(φ₀) * sind(λ₁ - λ) + tand(φ₁) * sind(λ - λ₀)) / sind(λ₁ - λ₀))
+
+# Along the sections a great circle between waypoints; beyond their ends, over land, the latitude of the end (a great
+# circle there would bulge north of the North Sea and Skagerrak, which then belong to no region)
 function ridge_latitude(λ)
-    for ((λ₀, φ₀), (λ₁, φ₁)) in zip(greenland_scotland_ridge[1:end-1], greenland_scotland_ridge[2:end])
-        λ₀ ≤ λ ≤ λ₁ && return φ₀ + (λ - λ₀) / (λ₁ - λ₀) * (φ₁ - φ₀)
+    (west, east) = (first(greenland_scotland_ridge), last(greenland_scotland_ridge))
+    ridge_longitudes[1] ≤ λ < first(west) && return last(west)
+    first(east) < λ ≤ ridge_longitudes[2] && return last(east)
+    for (a, b) in zip(greenland_scotland_ridge[1:end-1], greenland_scotland_ridge[2:end])
+        first(a) ≤ λ ≤ first(b) && return great_circle_latitude(λ, a, b)
     end
     return NaN
 end
@@ -107,7 +120,7 @@ const region_areas = Dict(
     "BFFB"  => (λ, φ) -> in_box(λ, φ, ((67, 83), (-75, -45))),           # south to Davis Strait (~67°N), incl. Nares Strait
     "HUDS"  => (λ, φ) -> in_box(λ, φ, ((45, 66), (-100, -65))),          # east to the mouth of Hudson Strait (~65°W)
     # Nordic Seas: between the Greenland-Scotland Ridge and Fram Strait, and the Norwegian coast from Tromsø to Vardø
-    "NRDS"  => (λ, φ) -> (-45 < λ ≤ 16 && ridge_latitude(λ) ≤ φ < 79) || in_box(λ, φ, ((66, 70), (16, 32))),
+    "NRDS"  => (λ, φ) -> (-45 < λ ≤ 16 && ridge_latitude(λ) ≤ φ < fram_strait_latitude) || in_box(λ, φ, ((66, 70), (16, 32))),
     # European marginal seas
     "NRTS"  => (λ, φ) -> in_boxes(λ, φ, [((58, 62), (-3.5, 9)),          # North Sea + English Channel: east of Orkney,
                                          ((55, 58), (-4.3, 9)),          # of Scotland's east coast (Forth, Moray Firth),
@@ -120,7 +133,7 @@ const region_areas = Dict(
                                          ((-90, 66), (-180, -100))]),    # Bering Sea, American side
     # The rest of the Atlantic sector, south of the Greenland-Scotland Ridge: Irminger Sea, Iceland Basin, Rockall
     # Trough, Bay of Biscay
-    "ESPNA" => (λ, φ) -> in_box(λ, φ, ((-90, 66), (-65, 0))),
+    "ESPNA" => (λ, φ) -> in_box(λ, φ, ((-90, 67), (-65, 0))),          # to 67°N: the Denmark Strait section bulges north of 66°N
 )
 
 # ## Connectivity

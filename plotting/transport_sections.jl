@@ -16,7 +16,7 @@ using CairoMakie
 
 cpu_grid = on_architecture(CPU(), grid)
 sections = gateway_sections(cpu_grid, config)
-isempty(sections) && error("No transport sections in $config_file: add [transports.sections] (see config.toml).")
+isempty(sections) && error("No transport sections: see sections.toml and [transports] sections in $config_file.")
 waypoints = Dict(name => (lons, lats) for (name, lons, lats) in transport_sections(config))
 
 h_bottom = Array(interior(bottom_height, :, :, 1))
@@ -59,7 +59,7 @@ bathymetry!(ax) = heatmap!(ax, h_bottom, colormap = :deep, colorrange = (-3000, 
 
 # ## All sections on the whole domain
 
-section_colors = [:red, :darkorange, :magenta, :lime, :cyan, :yellow]   # bright, against the bathymetry colours
+section_colors = [:red, :darkorange, :magenta, :lime, :cyan, :yellow, :white, :deeppink]   # bright, against the bathymetry
 
 fig = Figure(size = (900, 800))
 ax  = Axis(fig[1, 1], title = "Transport sections", xlabel = "grid i", ylabel = "grid j", aspect = DataAspect())

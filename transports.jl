@@ -1,5 +1,6 @@
-# Volume, heat, salt and freshwater transports through sections (by default Fram Strait, the Barents Sea Opening,
-# Bering Strait and Davis Strait; set in [transports] in the config) and through the two open boundaries. Included by
+# Volume, heat, salt and freshwater transports through the sections of sections.toml (Fram Strait, the Barents Sea
+# Opening, Bering Strait, Davis Strait and the Greenland-Scotland Ridge in three parts; [transports] sections in the
+# config can pick some of them) and through the two open boundaries. Included by
 # panarctic.jl (online) and analysis/transports.jl (offline), so both use the same faces and the same formulas.
 #
 # A section is a list of (longitude, latitude) waypoints joined by great circles, so its definition does not depend on
@@ -23,6 +24,7 @@ using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Grids: λnode, φnode, inactive_node, immersed_peripheral_node, immersed_inactive_node
 using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, Δzᶠᶜᶜ, Δzᶜᶠᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Printf
+using TOML
 
 # Density and heat capacity that convert volume fluxes to salt and heat transports. The defaults are NumericalEarth's for
 # `ocean_simulation` (1020 kg m⁻³, TEOS-10 heat capacity); panarctic.jl passes the model's own values.
@@ -31,9 +33,25 @@ const default_heat_capacity     = 3991.86795711963       # J kg⁻¹ K⁻¹
 
 transport_settings(config) = get(config, "transports", Dict{String, Any}())
 
-# Sections from the config, sorted by name: [(name, longitudes, latitudes), ...]
+# The sections, the same for every run and dataset (they are also boundaries of the PAN regions, regions.jl)
+const sections_file = joinpath(@__DIR__, "sections.toml")
+section_waypoints() = TOML.parsefile(sections_file)
+
+# The run's sections, sorted by name: [(name, longitudes, latitudes), ...]. All of sections.toml, or those named in
+# [transports] sections = [...]. Configs of earlier runs, with their own waypoints in a [transports.sections] table, keep
+# those.
 function transport_sections(config)
-    sections = get(transport_settings(config), "sections", Dict{String, Any}())
+    chosen = get(transport_settings(config), "sections", nothing)
+    if chosen isa AbstractDict
+        sections = chosen
+    else
+        sections = section_waypoints()
+        if !isnothing(chosen)
+            unknown = setdiff(chosen, keys(sections))
+            isempty(unknown) || error("[transports] sections: $(join(unknown, ", ")) not in $sections_file")
+            sections = filter(s -> first(s) in chosen, sections)
+        end
+    end
     return [(name, Float64.(s["lon"]), Float64.(s["lat"])) for (name, s) in sort(collect(sections), by = first)]
 end
 
