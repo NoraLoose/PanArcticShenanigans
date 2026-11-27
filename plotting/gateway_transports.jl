@@ -28,6 +28,11 @@ model = jldopen(transport_output_file) do f
          (key => [only(f["timeseries/$key/$i"]) for i in iterations] for key in keys(f["timeseries"]) if key != "t")...)
 end
 
+# Runs from before a section was added to sections.toml don't have it
+missing_sections = filter(name -> !haskey(model, "$(name)_volume"), section_names)
+isempty(missing_sections) || @info "Not in $transport_output_file (an earlier run): $(join(missing_sections, ", "))"
+section_names = setdiff(section_names, missing_sections)
+
 run_days = Date(config["time"]["start_date"]):Day(1):Date(DateTime(config["time"]["end_date"]) - Millisecond(1))
 glorys   = read_glorys_transports(config, run_days)
 isnothing(glorys) && @warn "No GLORYS transports for the run's days: analysis/validation_diagnostics.jl GLORYS --run $config_file"
