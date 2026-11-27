@@ -51,8 +51,6 @@ from NOAA NCEI; UDASH from PANGAEA, which keeps it on tape, so the first downloa
 | PAN | 15 sub-basins, adapted from hycom-validation | the whole domain, without overlaps |
 | TSAR | 4 boxes: Western and Eastern Eurasian Basin, Chukchi Sea, Beaufort Gyre | where the TSAR profiles are |
 
-<img src="docs/regions_pan.png" width="49%"> <img src="docs/regions_tsar.png" width="49%">
-
 Defined by longitude, latitude and bottom depth only (`diagnostics/regions.jl`), so they work for any grid spacing and on each
 dataset's grid. `julia +1.13 --project=. plotting/regions.jl config.toml` draws them on a run's grid.
 
@@ -61,7 +59,7 @@ dataset's grid. `julia +1.13 --project=. plotting/regions.jl config.toml` draws 
 | File (in `figure_dir`) | Shows |
 |---|---|
 | `{heat,freshwater,salt}_content_<set>.png` | content by region over the run: the run(s), GLORYS, each WOA23 decade |
-| `{temperature,salinity}_profiles_<set>.png` | mean profiles by region: model and GLORYS on the first and last day (several runs: each run's last day), WOA23 per decade, TSAR for the runs' years, UDASH for the runs' months |
+| `{temperature,salinity}_profiles_<set>.png` | mean profiles by region over a period (`--from`, `--to`; by default the runs' days): the run(s), GLORYS, WOA23's months of that period from the overlapping decade(s), TSAR for the period's years, UDASH for its months |
 | `gateway_transports.png` | volume, heat and freshwater through each section: model and GLORYS |
 | `tsubouchi_comparison.png`, `tsubouchi_comparison.md` (in `output_dir`) | monthly gateway transports against Tsubouchi et al. (2018), for runs in Sep 2005 – Aug 2006 |
 
