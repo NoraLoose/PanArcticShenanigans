@@ -1,7 +1,7 @@
 # The World Ocean Atlas 2023 (WOA23; Reagan et al. 2024) temperature and salinity climatologies on their own 0.25° grid,
 # a validation dataset: read a climatology, build an Oceananigans latitude-longitude grid whose cells are WOA's cells,
-# and the fields of one month, so that the model's code (regional_diagnostics.jl) runs on them
-# (woa23_regional_diagnostics!, for analysis/validation_diagnostics.jl).
+# and the fields of one month, so that the model's code (diagnostics/) runs on them
+# (woa23_ocean_diagnostics!, for analysis/validation_diagnostics.jl).
 # Needs validation_config.jl (the cache, <validation_dir>/WOA23/raw) and validation/glorys.jl (level_interfaces).
 #
 # Each WOA23 climatology averages one period (a decade, e.g. "A5B4" for 2005–2014) and comes as an annual (00), 12
@@ -145,24 +145,27 @@ function woa_fields(grid, decade, month; south, monthly = true, within = trues(s
 end
 
 """
-    woa23_regional_diagnostics!(decades; settings, set_names)
+    woa23_ocean_diagnostics!(decades; settings, set_names)
 
-WOA23's regional diagnostics (regional_diagnostics.jl) for each decade of `decades` (code => [first year, last year])
-and each region set of `set_names`, over the columns inside the model domain (domain.jl): the 12 monthly climatologies
-(monthly down to 1500 m, seasonal below; the seasonal ones for decades without monthly ones at 0.25°) and the annual
-one ("annual/…"), kept in <validation_dir>/WOA23/diagnostics/<set>/<decade>.jld2 with the decade's regions, levels,
-"years" and "monthly". Decades already there are skipped. Needs domain.jl, regional_diagnostics.jl and
+WOA23's heat, salt and freshwater content (diagnostics/ocean_content.jl) and T, S profiles (diagnostics/ts_profiles.jl)
+for each decade of `decades` (code => [first year, last year]) and each region set of `set_names`, over the columns
+inside the model domain (domain.jl): the 12 monthly climatologies (monthly down to 1500 m, seasonal below; the seasonal
+ones for decades without monthly ones at 0.25°) and the annual one ("annual/…"), kept in
+<validation_dir>/WOA23/<family>/<set>/<decade>.jld2 with the decade's regions, levels, "years" and "monthly". Decades
+already there are skipped. Needs domain.jl, diagnostics/ocean_content.jl, diagnostics/ts_profiles.jl and
 validation_config.jl.
 """
-function woa23_regional_diagnostics!(decades; settings, set_names)
+function woa23_ocean_diagnostics!(decades; settings, set_names)
     for (decade, years) in sort(collect(decades), by = last)
-        all(isfile(period_file("WOA23", set, decade)) for set in set_names) && continue
+        all(isfile(period_file("WOA23", family, set, decade)) for set in set_names, family in ocean_families) && continue
         grid, depths = woa_grid(decade; south = φ_south)
         within = within_model_domain(grid)
         sets   = [region_masks(grid; set, within) for set in set_names]
         @info @sprintf("WOA23 %s (%d–%d): %d × %d columns, %d levels; %d columns in the model domain", decade, years...,
                        size(grid)[1:2]..., length(depths), count(within))
-        foreach(regions -> save_dataset_regions("WOA23", regions, nothing; settings), sets)
+        for regions in sets, family in ocean_families
+            save_dataset_regions("WOA23", family, regions, nothing; settings = family_file_settings(family, settings))
+        end
 
         monthly = all(woa_available(v, decade, m; south = φ_south) for v in ("t", "s"), m in 1:12)
         monthly || @info "WOA23 $decade has no monthly climatologies at 0.25°: each month gets its season's"
@@ -171,7 +174,8 @@ function woa23_regional_diagnostics!(decades; settings, set_names)
         diagnostics(month) = begin   # month 0: the annual climatology
             θ, s = woa_fields(grid, decade, month; south = φ_south, monthly, within)
             set!(T, θ); set!(S, s)
-            [regional_diagnostics(grid, T, S, regions; settings...) for regions in sets]
+            [Dict(family => ocean_family(family, grid, T, S, regions; settings) for family in ocean_families)
+             for regions in sets]
         end
         annual = diagnostics(0)
         months = map(1:12) do month
@@ -180,10 +184,10 @@ function woa23_regional_diagnostics!(decades; settings, set_names)
             result
         end
 
-        for (n, regions) in enumerate(sets)
-            save_dataset_period("WOA23", regions.set, decade, getindex.(months, n); dates = 1:12, regions, grid,
-                                level_depths = reverse(depths), years, monthly,
-                                (Symbol("annual/$name") => value for (name, value) in pairs(annual[n]))...)
+        for (n, regions) in enumerate(sets), family in ocean_families
+            save_dataset_period("WOA23", family, regions.set, decade, [m[n][family] for m in months]; dates = 1:12,
+                                regions, grid, level_depths = reverse(depths), years, monthly,
+                                (Symbol("annual/$name") => value for (name, value) in pairs(annual[n][family]))...)
         end
     end
 end

@@ -9,7 +9,7 @@
 # Ocean outside every region of a set (TSAR) is light grey, land darker.
 
 include("../setup.jl")
-include("../regions.jl")
+include("../diagnostics/regions.jl")
 
 using CairoMakie
 using Printf

@@ -4,8 +4,9 @@
 # with them; the settings are the same for every run, so that all are computed alike.
 #
 # <validation_dir>/<dataset>/raw                              downloads and copies of the dataset
-# <validation_dir>/<dataset>/diagnostics/<set>/regions.jld2   the dataset's regions of a region set, and the settings
-# <validation_dir>/<dataset>/diagnostics/<set>/<period>.jld2  its diagnostics over one period (a day, a decade, ...)
+# <validation_dir>/<dataset>/<family>/<set>/regions.jld2      the dataset's regions of a region set, and the settings
+# <validation_dir>/<dataset>/<family>/<set>/<period>.jld2     its diagnostics over one period (a day, a decade, ...)
+# with <family> a family of diagnostics (diagnostics/): ocean_content, ts_profiles.
 
 using TOML
 
@@ -23,25 +24,27 @@ haskey(paths, "validation_dir") || @warn "No validation_dir in $paths_file: usin
 validation_dir  = abspath(get(paths, "validation_dir", "validation_data"))
 @info "Validation settings from $validation_file; datasets and their diagnostics in $validation_dir"
 
-# Heat, salt and freshwater content and profiles: the same settings for runs and datasets
-function regional_settings(validation)
-    settings = validation["regional_diagnostics"]
+# Heat, salt and freshwater content (diagnostics/ocean_content.jl): the same settings for runs and datasets
+function content_settings(validation)
+    settings = validation["ocean_content"]
     return (; reference_temperature = Float64(settings["reference_temperature"]),
               reference_salinity    = Float64(settings["reference_salinity"]),
               depth_bounds          = vcat(Float64.(settings["depth_bounds"]), Inf))   # Inf: the whole water column
 end
 
-region_set_names(validation) = String.(validation["regional_diagnostics"]["region_sets"])
+# The region sets (diagnostics/regions.jl) of every regional diagnostic
+region_set_names(validation) = String.(validation["region_sets"])
 
 dataset_names = sort(collect(keys(validation["datasets"])))
 dataset_options(name) = haskey(validation["datasets"], name) ? validation["datasets"][name] :
                         error("No dataset $name in $validation_file: one of $(join(dataset_names, ", "))")
 
-raw_dir(dataset)              = mkpath(joinpath(validation_dir, dataset, "raw"))
-diagnostics_dir(dataset, set) = mkpath(joinpath(validation_dir, dataset, "diagnostics", lowercase(set)))
-regions_file(dataset, set)          = joinpath(diagnostics_dir(dataset, set), "regions.jld2")
-period_file(dataset, set, period)   = joinpath(diagnostics_dir(dataset, set), "$period.jld2")
-period_files(dataset, set) = filter(f -> endswith(f, ".jld2") && f != "regions.jld2", readdir(diagnostics_dir(dataset, set)))
+raw_dir(dataset) = mkpath(joinpath(validation_dir, dataset, "raw"))
+diagnostics_dir(dataset, family, set)       = mkpath(joinpath(validation_dir, dataset, family, lowercase(set)))
+regions_file(dataset, family, set)          = joinpath(diagnostics_dir(dataset, family, set), "regions.jld2")
+period_file(dataset, family, set, period)   = joinpath(diagnostics_dir(dataset, family, set), "$period.jld2")
+period_files(dataset, family, set) =
+    filter(f -> endswith(f, ".jld2") && f != "regions.jld2", readdir(diagnostics_dir(dataset, family, set)))
 
 # ## GLORYS transports (validation/glorys.jl), for the sections of a run's config: need transports.jl
 #

@@ -1,6 +1,6 @@
 # Ocean regions of the model domain, for regional averages and integrals (heat content, profiles, ...), in sets:
 #
-#     include("regions.jl")
+#     include("diagnostics/regions.jl")
 #     regions = region_masks(grid; set = "PAN")   # (; set, codes, names, masks): masks[code] is a Bool matrix (Nx, Ny),
 #                                                 # true in the region's ocean columns; codes in a fixed order
 #
@@ -18,7 +18,7 @@ using Oceananigans.Architectures: on_architecture
 using TOML
 
 # The sections of the transports (sections.toml) bound some of the regions, so regions and transports always agree
-region_section(name) = TOML.parsefile(joinpath(@__DIR__, "sections.toml"))[name]
+region_section(name) = TOML.parsefile(joinpath(@__DIR__, "..", "sections.toml"))[name]
 
 # ## PAN
 #
