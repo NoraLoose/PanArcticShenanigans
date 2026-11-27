@@ -1,9 +1,9 @@
 # Diagnostics of a validation dataset (validation.toml [datasets]), computed with the same code and settings as a run's,
-# each on the dataset's own grid: regional diagnostics (regional_diagnostics.jl, validation.toml [regional_diagnostics])
-# over the columns inside the model domain (domain.jl), kept in <validation_dir>/<dataset>/diagnostics/<set>/; for
+# each on the dataset's own grid: content and T, S profiles (diagnostics/, validation.toml [ocean_content]) over the
+# columns inside the model domain (domain.jl), kept in <validation_dir>/<dataset>/<family>/<set>/; for
 # GLORYS with --run also the transports through the run's sections (transports.jl, the config's [transports]), kept in
-# <validation_dir>/GLORYS/transports/. Both are shared by all runs; what is already there is skipped (the regional
-# diagnostics are computed again if the settings changed).
+# <validation_dir>/GLORYS/transports/. Both are shared by all runs; what is already there is skipped (the contents
+# are computed again if the settings changed).
 #
 #   julia +1.13 --project=. analysis/validation_diagnostics.jl WOA23
 #   julia +1.13 --project=. analysis/validation_diagnostics.jl TSAR
@@ -12,7 +12,7 @@
 #   julia +1.13 --project=. analysis/validation_diagnostics.jl GLORYS --from 1993-01-01 --to 1993-03-01
 #
 # GLORYS: the days of a run (--run: its config's start_date to end_date), with the transports through its sections; or
-# the regional diagnostics only, from --from up to, not including, --to.
+# the contents and profiles only, from --from up to, not including, --to.
 # Needs no GPU and no model run; downloads what is missing (validation/<dataset>.jl).
 
 include("../validation_config.jl")   # validation, validation_dir, the paths and settings
@@ -25,13 +25,14 @@ options = dataset_options(dataset)
 using Dates
 
 include("../domain.jl")
-include("../regional_diagnostics.jl")
+include("../diagnostics/ocean_content.jl")
+include("../diagnostics/ts_profiles.jl")
 include("../validation/glorys.jl")
 include("../validation/woa23.jl")
 include("../validation/tsar.jl")
 include("../validation/udash.jl")
 
-settings  = regional_settings(validation)
+settings  = content_settings(validation)
 set_names = region_set_names(validation)
 
 # The run's config (--run), if any
@@ -52,16 +53,16 @@ end
 
 if dataset == "GLORYS"
     days = glorys_days()
-    glorys_regional_diagnostics!(days; settings, set_names)
+    glorys_ocean_diagnostics!(days; settings, set_names)
     isnothing(run_config) ? @info("No --run config: no transports (they are through a run's sections)") :
                             glorys_transports!(days, run_config)
 elseif dataset == "WOA23"
-    woa23_regional_diagnostics!(options["decades"]; settings, set_names)
+    woa23_ocean_diagnostics!(options["decades"]; settings, set_names)
 elseif dataset == "UDASH"
     years = isnothing(run_config) ? (first(options["years"]):last(options["years"])) : unique(year.(glorys_days()))
-    udash_regional_diagnostics!(options, years; settings, set_names)
+    udash_ts_profiles!(options, years; set_names)
 elseif dataset == "TSAR"
-    tsar_regional_diagnostics!(options; settings, set_names)
+    tsar_ts_profiles!(options; set_names)
 else
     error("No diagnostics for dataset $dataset yet: add validation/$(lowercase(dataset)).jl and a branch here")
 end

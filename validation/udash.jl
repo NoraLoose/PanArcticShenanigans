@@ -22,8 +22,8 @@
 # over profiles, not measurements, so a finely sampled cast does not outweigh a coarse one; it is not area-weighted,
 # and only as representative as the profiles are, so read it together with the counts. No heat or freshwater content.
 #
-# udash_regional_diagnostics! keeps them in <validation_dir>/UDASH/diagnostics/<set>/<year>.jld2. Needs
-# validation_config.jl, domain.jl, regions.jl, regional_diagnostics.jl and validation/glorys.jl.
+# udash_ts_profiles! keeps them in <validation_dir>/UDASH/ts_profiles/<set>/<year>.jld2. Needs
+# validation_config.jl, domain.jl, diagnostics/ts_profiles.jl and validation/glorys.jl.
 
 using GibbsSeaWater: gsw_sa_from_sp, gsw_pt0_from_t
 using Dates, Printf
@@ -180,20 +180,20 @@ function udash_target_levels()
 end
 
 """
-    udash_regional_diagnostics!(options, years; settings, set_names)
+    udash_ts_profiles!(options, years; set_names)
 
 UDASH's monthly mean profiles by region for each year of `years` and each region set of `set_names`:
-<validation_dir>/UDASH/diagnostics/<set>/<year>.jld2 with "temperature", "salinity" (level, region, month), the levels
+<validation_dir>/UDASH/ts_profiles/<set>/<year>.jld2 with "temperature", "salinity" (level, region, month), the levels
 from the bottom up, "n_temperature", "n_salinity" (the number of profiles), and "dates" the first of each month. Years
 already there are skipped.
 """
-function udash_regional_diagnostics!(options, years; settings, set_names)
-    years = filter(year -> !all(isfile(period_file("UDASH", set, year)) for set in set_names), collect(years))
+function udash_ts_profiles!(options, years; set_names)
+    years = filter(year -> !all(isfile(period_file("UDASH", "ts_profiles", set, year)) for set in set_names), collect(years))
     isempty(years) && return @info "UDASH: all years already computed"
 
     levels = udash_target_levels()
     sets, numbers, cell = udash_region_lookup(set_names)
-    foreach(regions -> save_dataset_regions("UDASH", regions, nothing; level_depths = reverse(levels), settings), sets)
+    foreach(regions -> save_dataset_regions("UDASH", "ts_profiles", regions, nothing; level_depths = reverse(levels)), sets)
     L = length(levels)
 
     for year in years
@@ -227,7 +227,7 @@ function udash_regional_diagnostics!(options, years; settings, set_names)
             results = [(; temperature = mean(θ[end:-1:1, :, m], nθ[end:-1:1, :, m]),   # levels from the bottom up
                           salinity    = mean(S[end:-1:1, :, m], nS[end:-1:1, :, m]),
                           n_temperature = nθ[end:-1:1, :, m], n_salinity = nS[end:-1:1, :, m]) for m in 1:12]
-            save_dataset_period("UDASH", regions.set, year, results; dates = [Date(year, m, 1) for m in 1:12])
+            save_dataset_period("UDASH", "ts_profiles", regions.set, year, results; dates = [Date(year, m, 1) for m in 1:12])
         end
     end
 end

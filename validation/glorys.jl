@@ -1,6 +1,6 @@
 # GLORYS12 daily means on their own 1/12° grid, a validation dataset: read a variable, and build an Oceananigans
 # latitude-longitude grid whose cells are GLORYS's cells, with GLORYS's levels and sea floor (deptho, as partial bottom
-# cells), so the model's code runs on it: regional_diagnostics.jl (glorys_regional_diagnostics!) and transports.jl
+# cells), so the model's code runs on it: diagnostics/ (glorys_ocean_diagnostics!) and transports.jl
 # (glorys_transports!), both for analysis/validation_diagnostics.jl.
 # Needs `data_dir`, where the GLORYS downloads are (paths.jl: paths.toml or your paths_local.toml).
 
@@ -76,33 +76,36 @@ glorys_level_data(name, region, levels, date) =
     reverse(read_glorys(name, GLORYSDaily(), region; date).data[:, :, levels], dims = 3)
 
 """
-    glorys_regional_diagnostics!(days; settings, set_names)
+    glorys_ocean_diagnostics!(days; settings, set_names)
 
-GLORYS's regional diagnostics (regional_diagnostics.jl) of each day of `days` and each region set of `set_names`, over
-the columns inside the model domain (domain.jl), kept in <validation_dir>/GLORYS/diagnostics/<set>/<day>.jld2 (with
-the regions once in regions.jld2). Days already there are skipped, so runs over the same days share them. Needs
-domain.jl, regional_diagnostics.jl and validation_config.jl.
+GLORYS's heat, salt and freshwater content (diagnostics/ocean_content.jl) and T, S profiles (diagnostics/ts_profiles.jl)
+of each day of `days` and each region set of `set_names`, over the columns inside the model domain (domain.jl), kept in
+<validation_dir>/GLORYS/<family>/<set>/<day>.jld2 (with the regions once in regions.jld2). Days already there are
+skipped, so runs over the same days share them. Needs domain.jl, diagnostics/ocean_content.jl,
+diagnostics/ts_profiles.jl and validation_config.jl.
 """
-function glorys_regional_diagnostics!(days; settings, set_names)
+function glorys_ocean_diagnostics!(days; settings, set_names)
     region = BoundingBox(longitude = (-180, 180), latitude = (φ_south, 90))
     grid, levels, depths = glorys_grid(region, first(days))
     within = within_model_domain(grid)
     sets   = [region_masks(grid; set, within) for set in set_names]
     @info @sprintf("GLORYS: %d × %d columns, %d levels; %d columns in the model domain", size(grid)[1:2]...,
                    length(levels), count(within))
-    for regions in sets
-        save_dataset_regions("GLORYS", regions, grid; level_depths = reverse(depths), settings)
+    for regions in sets, family in ocean_families
+        save_dataset_regions("GLORYS", family, regions, grid; level_depths = reverse(depths),
+                             settings = family_file_settings(family, settings))
     end
 
     T, S = CenterField(grid), CenterField(grid)
     for date in days
-        missing_sets = filter(regions -> !isfile(period_file("GLORYS", regions.set, date)), sets)
-        isempty(missing_sets) && continue
+        todo = [(regions, family) for regions in sets for family in ocean_families
+                   if !isfile(period_file("GLORYS", family, regions.set, date))]
+        isempty(todo) && continue
         set!(T, glorys_level_data(:temperature, region, levels, date))
         set!(S, glorys_level_data(:salinity,    region, levels, date))
-        for regions in missing_sets
-            result = regional_diagnostics(grid, T, S, regions; settings...)
-            save_dataset_period("GLORYS", regions.set, date, [result]; dates = [date])
+        for (regions, family) in todo
+            result = ocean_family(family, grid, T, S, regions; settings)
+            save_dataset_period("GLORYS", family, regions.set, date, [result]; dates = [date])
         end
     end
 end

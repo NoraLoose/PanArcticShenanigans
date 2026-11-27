@@ -20,7 +20,7 @@ Several runs go in the same figures, told apart by their experiment names:
 julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config_b.toml --colors red,royalblue
 ```
 
-Each run gets its own figures as above, and the regional figures of all of them go to a folder `compare_<a>_<b>` in
+Each run gets its own figures as above, and the content and profile figures of all of them go to a folder `compare_<a>_<b>` in
 the figure folder. `--colors` (optional) sets the runs' colours, in the order of the config files.
 
 ## Datasets
@@ -53,29 +53,31 @@ from NOAA NCEI; UDASH from PANGAEA, which keeps it on tape, so the first downloa
 
 <img src="docs/regions_pan.png" width="49%"> <img src="docs/regions_tsar.png" width="49%">
 
-Defined by longitude, latitude and bottom depth only (`regions.jl`), so they work for any grid spacing and on each
+Defined by longitude, latitude and bottom depth only (`diagnostics/regions.jl`), so they work for any grid spacing and on each
 dataset's grid. `julia +1.13 --project=. plotting/regions.jl config.toml` draws them on a run's grid.
 
 ## Figures
 
 | File (in `figure_dir`) | Shows |
 |---|---|
-| `regional_{heat,freshwater,salt}_content_<set>.png` | content by region over the run: the run(s), GLORYS, each WOA23 decade |
-| `regional_{temperature,salinity}_profiles_<set>.png` | mean profiles by region: model and GLORYS on the first and last day (several runs: each run's last day), WOA23 per decade, TSAR for the runs' years, UDASH for the runs' months |
+| `{heat,freshwater,salt}_content_<set>.png` | content by region over the run: the run(s), GLORYS, each WOA23 decade |
+| `{temperature,salinity}_profiles_<set>.png` | mean profiles by region: model and GLORYS on the first and last day (several runs: each run's last day), WOA23 per decade, TSAR for the runs' years, UDASH for the runs' months |
 | `gateway_transports.png` | volume, heat and freshwater through each section: model and GLORYS |
 | `tsubouchi_comparison.png`, `tsubouchi_comparison.md` (in `output_dir`) | monthly gateway transports against Tsubouchi et al. (2018), for runs in Sep 2005 – Aug 2006 |
 
 ## Settings and files
 
 - [`validation.toml`](../validation.toml): the settings, the same for every run so that all are computed alike: region
-  sets, reference temperature and salinity, depth bounds, and the datasets with their options. The sections and the
-  transports' reference values stay in each run's `[transports]`, as the model uses them online too.
+  sets, reference temperature and salinity, depth bounds, and the datasets with their options. The sections are in
+  [`sections.toml`](../sections.toml), and the transports' reference values stay in each run's `[transports]`, as the
+  model uses them online too.
 - [`references/`](references): small reference tables that exist nowhere else in usable form (e.g. values read from a
   paper's figures), kept in the repo with their source and uncertainty in the header. Anything large or downloadable
   goes in `validation_dir` instead.
 - `<validation_dir>/<dataset>/raw/`: downloads and copies of the dataset.
-- `<validation_dir>/<dataset>/diagnostics/<set>/`: its regional diagnostics, `regions.jld2` and one file per period (a
-  day for GLORYS, a decade for WOA23), shared by all runs. They are computed again when the settings change.
+- `<validation_dir>/<dataset>/<family>/<set>/`: its diagnostics of one family (`ocean_content`, `ts_profiles`; see
+  `diagnostics/`), `regions.jld2` and one file per period (a day for GLORYS, a decade for WOA23), shared by all runs.
+  The contents are computed again when their settings change.
 - `<validation_dir>/GLORYS/transports/<key>/`: GLORYS's transports, a file per day, for one set of sections and reference
   values (described in its `sections.toml`).
 
@@ -86,8 +88,9 @@ julia +1.13 --project=. analysis/validation_diagnostics.jl WOA23
 julia +1.13 --project=. analysis/validation_diagnostics.jl TSAR
 julia +1.13 --project=. analysis/validation_diagnostics.jl UDASH --run config.toml    # or all years without --run
 julia +1.13 --project=. analysis/validation_diagnostics.jl GLORYS --run config.toml   # or --from 1993-01-01 --to 1993-02-01
-julia +1.13 --project=. analysis/regional_diagnostics.jl config.toml
-julia +1.13 --project=. plotting/regional_diagnostics.jl config.toml
+julia +1.13 --project=. analysis/ocean_diagnostics.jl config.toml
+julia +1.13 --project=. plotting/ocean_content.jl config.toml
+julia +1.13 --project=. plotting/ts_profiles.jl config.toml
 julia +1.13 --project=. plotting/gateway_transports.jl config.toml
 julia +1.13 --project=. analysis/tsubouchi_comparison.jl config.toml
 ```
@@ -95,10 +98,10 @@ julia +1.13 --project=. analysis/tsubouchi_comparison.jl config.toml
 ## Adding a dataset
 
 1. A reader in `validation/<dataset>.jl`. For a gridded dataset, a function that builds an Oceananigans grid of its
-   cells and sets T and S for each period, then passes them to `regional_diagnostics` (see `woa23.jl`). For profiles
-   that are already regional means, one that stores them in the same files (see `tsar.jl`).
+   cells and sets T and S for each period, then passes them to each family of `diagnostics/` (see `woa23.jl`). For
+   profiles that are already regional means, one that stores them as `ts_profiles` (see `tsar.jl`).
 2. A `[datasets.<dataset>]` section in `validation.toml`, with its options.
 3. A line for it in `analysis/validation_diagnostics.jl` (and in `analysis/compare_with_validation.jl`), and a row in
    the table above.
-4. Its lines in `plotting/regional_diagnostics.jl`, read like GLORYS's or WOA23's (contents and profiles) or TSAR's
-   (profiles only).
+4. Its lines in `plotting/ocean_content.jl` and/or `plotting/ts_profiles.jl`, read like GLORYS's or WOA23's (contents
+   and profiles) or TSAR's (profiles only).

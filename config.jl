@@ -30,5 +30,6 @@ offline_transport_output_file = joinpath(output_dir, "arctic_transports_offline.
 run_diagnostics_dir = isempty(get(paths, "diagnostics_dir", "")) ? output_dir :
                       mkpath(joinpath(paths["diagnostics_dir"], experiment))
 
-# by analysis/regional_diagnostics.jl, for a region set (regions.jl)
-regional_output_file(set) = joinpath(run_diagnostics_dir, "arctic_regional_diagnostics_$(lowercase(set)).jld2")
+# by analysis/ocean_diagnostics.jl, for a region set (regions.jl)
+ocean_content_file(set) = joinpath(run_diagnostics_dir, "ocean_content_$(lowercase(set)).jld2")
+ts_profiles_file(set)   = joinpath(run_diagnostics_dir, "ts_profiles_$(lowercase(set)).jld2")

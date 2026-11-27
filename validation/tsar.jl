@@ -9,9 +9,9 @@
 # The file's two deepest levels (999 and 1000 m) are left out: their temperatures are 26–30 °C in most regions and
 # years (all 165 values at 1000 m, 16 at 999 m), which is not physical; everything above is within −2 to 5 °C.
 #
-# As profiles that are already regional means, they give the temperature and salinity of regional_diagnostics.jl but no
-# contents (no volumes). tsar_regional_diagnostics! keeps them in the same files as the other datasets.
-# Needs validation_config.jl and regional_diagnostics.jl.
+# As profiles that are already regional means, they give the temperature and salinity of diagnostics/ts_profiles.jl but
+# no contents (no volumes). tsar_ts_profiles! keeps them in the same form as the other datasets' profiles.
+# Needs validation_config.jl and diagnostics/ts_profiles.jl.
 
 using NumericalEarth.DataWrangling: NCDatasets
 using .NCDatasets: Dataset
@@ -33,13 +33,13 @@ function tsar_file()
 end
 
 """
-    tsar_regional_diagnostics!(options; settings, set_names)
+    tsar_ts_profiles!(options; set_names)
 
-The observed profiles as the TSAR region set's diagnostics: <validation_dir>/TSAR/diagnostics/tsar/1970-2017.jld2 (or
+The observed profiles as the TSAR region set's diagnostics: <validation_dir>/TSAR/ts_profiles/tsar/1970-2017.jld2 (or
 the file's years), with "temperature" and "salinity" (level, region, year), the levels from the bottom up, and "dates"
 the years. Only for the TSAR region set, if it is in `set_names`.
 """
-function tsar_regional_diagnostics!(options; settings, set_names)
+function tsar_ts_profiles!(options; set_names)
     "TSAR" in set_names || return @warn "The TSAR observations are for the TSAR region set, which is not in region_sets"
 
     path = tsar_file()
@@ -60,6 +60,6 @@ function tsar_regional_diagnostics!(options; settings, set_names)
     results = [(; temperature = permutedims(θ[order, y, levels]), salinity = permutedims(S[order, y, levels]))
                for y in eachindex(years)]
 
-    save_dataset_regions("TSAR", regions, nothing; level_depths = depth[levels], settings)
-    save_dataset_period("TSAR", "TSAR", "$(first(years))-$(last(years))", results; dates = string.(years))
+    save_dataset_regions("TSAR", "ts_profiles", regions, nothing; level_depths = depth[levels])
+    save_dataset_period("TSAR", "ts_profiles", "TSAR", "$(first(years))-$(last(years))", results; dates = string.(years))
 end

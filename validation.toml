@@ -3,10 +3,11 @@
 # settings are in its config file; the folders, including validation_dir, in paths.toml (or your paths_local.toml).
 # See validation/README.md.
 
-[regional_diagnostics]
-# Heat, salt and freshwater content and mean T, S profiles of the regions of regions.jl (regional_diagnostics.jl).
-region_sets           = ["PAN", "TSAR"]   # PAN: 15 sub-basins covering the domain; TSAR: the 4 boxes of the observed
-                                          # profiles of Muilwijk et al. (2022)
+region_sets = ["PAN", "TSAR"]   # regions.jl; PAN: 15 sub-basins covering the domain; TSAR: the 4 boxes of the observed
+                                # profiles of Muilwijk et al. (2022)
+
+[ocean_content]
+# Heat, salt and freshwater content of each region (ocean_content.jl)
 reference_temperature = 0      # heat content relative to this temperature (°C)
 reference_salinity    = 34.8   # freshwater content relative to this salinity (g/kg), also the isohaline that bounds it
 depth_bounds          = [100, 200, 300, 500, 700, 1000, 2000]   # content from the surface down to each depth (m); the
