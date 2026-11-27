@@ -56,10 +56,14 @@ using SHA: sha1
 using JLD2: jldopen
 using Dates: Date
 
+# Raised when the way the transports are computed changes (2: each face counted once where two segments meet, #52), so
+# that GLORYS's transports computed before are not reused
+const transport_method = 2
+
 function glorys_transport_dir(config)
     sections   = transport_sections(config)
     references = reference_values(config)
-    key = bytes2hex(sha1(repr((sections, references))))[1:12]
+    key = bytes2hex(sha1(repr((sections, references, transport_method))))[1:12]
     dir = mkpath(joinpath(validation_dir, "GLORYS", "transports", key))
     description = joinpath(dir, "sections.toml")
     isfile(description) || open(description, "w") do io
