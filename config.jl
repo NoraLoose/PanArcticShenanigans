@@ -16,6 +16,8 @@ config = TOML.parsefile(config_file)
 paths_file = joinpath(@__DIR__, isfile(joinpath(@__DIR__, "paths_local.toml")) ? "paths_local.toml" : "paths.toml")
 paths = TOML.parsefile(paths_file)["paths"]
 @info "Folders from $paths_file" paths
+haskey(config, "paths") &&
+    @warn "$config_file has a [paths] section, which is no longer read: the folders come from $paths_file"
 
 data_dir   = paths["data_dir"]
 dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
