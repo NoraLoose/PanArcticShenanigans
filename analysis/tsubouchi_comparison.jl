@@ -215,8 +215,8 @@ for (row, quantity) in enumerate(quantities), (col, (code, name, label)) in enum
         lines!(ax, [a, b], [mm, mm]; color = :red, linewidth = 3, linestyle = :dash, label = "model, block mean")
     end
     lines!(ax, model_t, theirs(model, model_t, name, quantity); color = :red, label = "model")
-    isnothing(glorys) || scatter!(ax, glorys_t, theirs(glorys, glorys_t, name, quantity); color = :black, marker = :diamond,
-                                  markersize = 6, label = "GLORYS")
+    isnothing(glorys) || scatterlines!(ax, glorys_t, theirs(glorys, glorys_t, name, quantity); color = :black,
+                                       markersize = 5, label = "GLORYS")
     row == 1 && col == 1 && axislegend(ax; position = :lb, framevisible = false, unique = true, labelsize = 10)
 end
 Label(fig[0, :], "$experiment: transports into the Arctic against Tsubouchi et al. (2018); " *
