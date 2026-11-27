@@ -137,7 +137,7 @@ end
 """
     glorys_transports!(days, config)
 
-GLORYS's daily-mean transports through the sections of `config` ([transports.sections]), on GLORYS's own 1/12° grid
+GLORYS's daily-mean transports through the sections of `config` (sections.toml), on GLORYS's own 1/12° grid
 with the same code as the model's (transports.jl): for each section, an Oceananigans grid of GLORYS's cells over a box
 around it, with GLORYS's levels and sea floor; then section_faces and section_transports give the faces, signs and
 formulas the model uses (the same staircase rule, positive into the Arctic, the config's reference temperature and

@@ -1,0 +1,51 @@
+# Sections across the straits into the Arctic and the Nordic Seas, the same for every run and dataset. They are
+#   - the sections of the transports (transports.jl): a run computes all of them, or those listed in [transports]
+#     sections of its config;
+#   - boundaries of the PAN regions (regions.jl): Fram Strait between the Arctic basins and the Nordic Seas, and the
+#     Greenland-Scotland Ridge (denmark_strait, iceland_scotland, north_sea) between the Nordic Seas and the Atlantic
+#     and North Sea.
+#
+# Each section is a great-circle path through (longitude, latitude) waypoints. Positive transport flows to the right,
+# walking from the first waypoint to the last; they are ordered so that positive is into the Arctic, or north into the
+# Nordic Seas. Both ends are on land (checked on GLORYS's 1/12° grid), so a section spans the whole strait on any grid.
+# Check with plotting/transport_sections.jl.
+
+# Fram Strait follows the mooring array at 78°50′N; intermediate waypoints keep the great circles on that latitude.
+[fram_strait]
+lon = [15.0, 10.0, 5.0, 0.0, -5.0, -10.0, -15.0, -20.0]
+lat = [78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333]
+
+# Barents Sea Opening follows the mooring line from Norway (Fugløya) via Bjørnøya to Sørkapp, Svalbard.
+[barents_sea_opening]
+lon = [20.0, 19.0, 16.5]
+lat = [70.0, 74.45, 77.0]
+
+[bering_strait]
+lon = [-166.0, -171.0]
+lat = [66.0, 66.0]
+
+[davis_strait]
+lon = [-53.0, -63.0]
+lat = [67.0, 66.5]
+
+# The Greenland-Scotland Ridge, in three parts, from east to west so that positive is north. The waypoints of each
+# section go on from where the previous one ended, so together they form one line from Norway to Greenland (and regions.jl
+# needs them in order of longitude, along the whole ridge).
+
+# North Sea: from Norway (Stad) north of Shetland, through Shetland and Orkney (Fair Isle and Pentland Firth gaps) to
+# the north coast of Scotland.
+[north_sea]
+lon = [5.5, -1.3, -3.1, -4.0]
+lat = [62.0, 60.3, 59.0, 58.4]
+
+# Iceland-Scotland Ridge, east of Iceland: from Scotland along the Wyville Thomson Ridge, across the Faroe Bank Channel
+# sill and along the Iceland-Faroe Ridge west of the Faroes to southeast Iceland. Includes the Faroe-Shetland inflow.
+[iceland_scotland]
+lon = [-4.0, -4.5, -6.5, -8.4, -8.5, -14.5]
+lat = [58.4, 59.2, 60.2, 61.0, 62.3, 64.6]
+
+# Denmark Strait, west of Iceland: from southeast Iceland across its interior (on land all the way, around the
+# fjords of the north coast), then from the Westfjords to Greenland along 66°N.
+[denmark_strait]
+lon = [-14.5, -19.0, -21.8, -22.6, -29.0, -36.5]
+lat = [64.6, 65.0, 65.3, 66.0, 66.0, 66.0]
