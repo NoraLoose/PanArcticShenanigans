@@ -44,22 +44,13 @@ monitor_hours   = 1       # monitor.csv: transports through the open sides, mean
                           # fastest point (plotting/volume_budget.jl, plotting/max_speed.jl); 0 = off
 
 [transports]
-# Volume, heat, salt and freshwater transports through the sections below and the open boundaries (see transports.jl).
+# Volume, heat, salt and freshwater transports through the sections and the open boundaries (see transports.jl).
 online                = true   # true: computed every time step and averaged over average_hours, written to arctic_transports.jld2
 reference_temperature = 0      # heat transport relative to this temperature (°C)
 reference_salinity    = 34.8   # freshwater transport relative to this salinity (g/kg)
 
-# Each section is a great-circle path through (longitude, latitude) waypoints. Positive transport flows to the right,
-# walking from the first waypoint to the last; these are ordered so that positive is into the Arctic. Both ends should
-# be on land, so the section spans the whole strait on any grid. Check with plotting/transport_sections.jl.
-[transports.sections]
-# Fram Strait follows the mooring array at 78°50′N; intermediate waypoints keep the great circles on that latitude.
-fram_strait         = { lon = [15.0, 10.0, 5.0, 0.0, -5.0, -10.0, -15.0, -20.0],
-                        lat = [78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333, 78.8333] }
-# Barents Sea Opening follows the mooring line from Norway (Fugløya) via Bjørnøya to Sørkapp, Svalbard.
-barents_sea_opening = { lon = [20.0, 19.0, 16.5],  lat = [70.0, 74.45, 77.0] }
-bering_strait       = { lon = [-166.0, -171.0], lat = [66.0, 66.0] }
-davis_strait        = { lon = [-53.0, -63.0],   lat = [67.0, 66.5] }
+# The sections are in sections.toml, the same for every run (they are also boundaries of the PAN regions). All are
+# computed; to compute only some, list them: sections = ["fram_strait", "barents_sea_opening"]
 
 [boundaries]
 velocity_inflow_days = 0.0417   # oblique radiation on u, v: nudging timescale toward GLORYS on inflow (0.0417 days = 1 hour).
