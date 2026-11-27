@@ -5,7 +5,7 @@
 #   heat_content_<set>.png, freshwater_content_<set>.png, salt_content_<set>.png
 #       heat and salt content over the whole water column, or down to `content_depth`, and freshwater content down to
 #       the isohaline. Each run's averages are drawn at the middle of their windows, GLORYS's daily means at noon of
-#       their day, and each WOA23 decade's monthly climatology as a step over every month of the years it stands for
+#       their day (a black line), and each WOA23 decade's monthly climatology as a step over every month of the years it stands for
 #       (seasonal for the decades without monthly ones). The regions of the different grids differ slightly in volume
 #       (coasts, sea floor), so their contents differ by an offset as well.
 # A dataset without contents for the set, or for the runs' days, is left out (with a warning).
@@ -79,8 +79,8 @@ for set in region_set_names(validation)
                        label = length(runs) == 1 ? "model" : run.experiment)
             end
             isnothing(glorys) ||
-                scatter!(ax, days(glorys.dates .+ Hour(12)), value(glorys)[r, :]; color = :black, marker = :diamond,
-                         label = "GLORYS")
+                scatterlines!(ax, days(glorys.dates .+ Hour(12)), value(glorys)[r, :]; color = :black, markersize = 5,
+                              label = "GLORYS")
             r == 1 && axislegend(ax; position = :lb, framevisible = false, merge = true, labelsize = 10)
         end
         Label(fig[0, :], "$title, $set regions: $label"; fontsize = 18)

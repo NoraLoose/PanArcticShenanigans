@@ -47,7 +47,7 @@ for (row, quantity) in enumerate(quantities), (col, name) in enumerate(section_n
     lines!(ax, model["t"], model[key]; color = :red, label = "model")
     if !isnothing(glorys) && haskey(glorys.transports, key)
         t = Dates.value.(glorys.dates .- start_date) .+ 0.5
-        scatter!(ax, t, glorys.transports[key]; color = :black, marker = :diamond, label = "GLORYS")
+        scatterlines!(ax, t, glorys.transports[key]; color = :black, markersize = 5, label = "GLORYS")
     end
     row == 1 && col == 1 && axislegend(ax; position = :lb, framevisible = false)
 end
