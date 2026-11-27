@@ -33,3 +33,11 @@ sea_ice_output_file = joinpath(output_dir, "arctic_sea_ice.jld2")
 checkpoint_prefix   = "arctic_checkpoint"   # checkpoints in output_dir, written by panarctic.jl
 transport_output_file         = joinpath(output_dir, "arctic_transports.jld2")           # online, by panarctic.jl
 offline_transport_output_file = joinpath(output_dir, "arctic_transports_offline.jld2")   # by analysis/transports.jl
+
+# Derived diagnostics of the run, small and worth keeping: in diagnostics_dir/<experiment> if set, else in output_dir
+run_diagnostics_dir = isempty(get(paths, "diagnostics_dir", "")) ? output_dir :
+                      mkpath(joinpath(paths["diagnostics_dir"], experiment))
+
+# by analysis/ocean_diagnostics.jl, for a region set (regions.jl)
+ocean_content_file(set) = joinpath(run_diagnostics_dir, "ocean_content_$(lowercase(set)).jld2")
+ts_profiles_file(set)   = joinpath(run_diagnostics_dir, "ts_profiles_$(lowercase(set)).jld2")

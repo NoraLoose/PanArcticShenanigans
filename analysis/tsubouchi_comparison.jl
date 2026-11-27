@@ -33,11 +33,11 @@ start_date = Date(config["time"]["start_date"])
 end_date   = Date(config["time"]["end_date"])
 run_days   = Dates.value(end_date - start_date)
 
-# (column in Tsubouchi et al.'s files, section name in [transports.sections], label)
+# (column in Tsubouchi et al.'s files, section name in sections.toml, label)
 gateways = filter(g -> g[2] in first.(transport_sections(config)),
                   [("davis", "davis_strait", "Davis"), ("fram", "fram_strait", "Fram"),
                    ("bso", "barents_sea_opening", "BSO"), ("bering", "bering_strait", "Bering")])
-isempty(gateways) && error("None of davis_strait, fram_strait, barents_sea_opening, bering_strait in [transports.sections]")
+isempty(gateways) && error("None of davis_strait, fram_strait, barents_sea_opening, bering_strait among the transport sections")
 
 #####
 ##### Tsubouchi et al. (2018)
