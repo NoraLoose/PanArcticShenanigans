@@ -12,6 +12,8 @@ config = TOML.parsefile(config_file)
 @info "Settings from $config_file" config
 
 include("paths.jl")   # paths (paths.toml or paths_local.toml), data_dir, dir_kw
+haskey(config, "paths") &&
+    @warn "$config_file has a [paths] section, which is no longer read: the folders come from $paths_file"
 
 experiment = get(config, "experiment", "")   # "" (or no setting): directly in output_dir and figure_dir
 output_dir = mkpath(joinpath(paths["output_dir"], experiment))   # model output
