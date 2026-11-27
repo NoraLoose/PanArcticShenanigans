@@ -20,11 +20,17 @@ julia +1.13 --project=. -e 'using Pkg; Pkg.instantiate()'   # once
 julia +1.13 --project=. panarctic.jl
 ```
 
-Settings (grid, dates, time step, output, and the data, output and figure folders) are in [`config.toml`](config.toml). To use your own, copy it and pass it as an argument:
+Settings (grid, dates, time step, output) are in [`config.toml`](config.toml). To use your own, copy it and pass it as an argument:
 
 ```bash
 cp config.toml config_myname.toml   # edit as needed
 julia +1.13 --project=. panarctic.jl config_myname.toml
+```
+
+The data, output and figure folders are in [`paths.toml`](paths.toml), the same for every config file. To use your own, copy it to `paths_local.toml` (not in the repo) and edit that; it is then used instead of `paths.toml`:
+
+```bash
+cp paths.toml paths_local.toml   # edit as needed
 ```
 
 The first run downloads tens of GB (GLORYS, JRA55), so set `data_dir` to a disk with space. For a quick check, set `end_date = 1993-01-01T03:00` (3 hours).
@@ -33,7 +39,7 @@ The first run is slow: it downloads the data and fills gaps in GLORYS (cached af
 
 The ocean and sea ice are nested in GLORYS with NumericalEarth's `nested_ocean_simulation` and `nested_sea_ice_simulation` ([NumericalEarth.jl#676](https://github.com/NumericalEarth/NumericalEarth.jl/pull/676), not yet released; `Project.toml` pins its branch). They read GLORYS along the open Atlantic and Pacific edges, set the open boundary conditions, and start the run from GLORYS on `start_date`.
 
-Each run has an experiment name (`experiment` in the config). Its output goes to `output_dir/<experiment>/` (default `output/test/`, relative to where you run), together with a copy of the config file that ran it (`config.toml`, replaced by each run of the experiment): time averages (daily by default) of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean.jld2`, `arctic_sea_ice.jld2`), and checkpoints of the full model state (`arctic_checkpoint*.jld2`). The averaging and checkpoint intervals are set in `[output]` in the config.
+Each run has an experiment name (`experiment` in the config). Its output goes to `output_dir/<experiment>/` (default `output/test/`, relative to where you run), together with copies of the config file that ran it and of its folders (`config.toml`, `paths.toml`, replaced by each run of the experiment): time averages (daily by default) of the 3D ocean (T, S, u, v), the free surface and the sea ice (`arctic_ocean.jld2`, `arctic_sea_ice.jld2`), and checkpoints of the full model state (`arctic_checkpoint*.jld2`). The averaging and checkpoint intervals are set in `[output]` in the config.
 
 To continue a run from its latest checkpoint, set `restart = true` and run again with the same experiment name. The run still ends at `end_date`.
 

@@ -13,9 +13,10 @@ include("transports.jl")
 include("volume_control.jl")
 include("monitor.jl")
 
-# Keep the config of this run with its output (replacing that of an earlier run of the same experiment)
+# Keep the config and folders of this run with its output (replacing those of an earlier run of the same experiment)
 isfile(run_config_file) && samefile(config_file, run_config_file) || cp(config_file, run_config_file; force = true)
-@info "Experiment \"$experiment\": output in $output_dir, config copied to $run_config_file"
+isfile(run_paths_file) && samefile(paths_file, run_paths_file) || cp(paths_file, run_paths_file; force = true)
+@info "Experiment \"$experiment\": output in $output_dir, config and folders copied to $run_config_file and $run_paths_file"
 
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir
 using Oceananigans.ImmersedBoundaries: immersed_inactive_node

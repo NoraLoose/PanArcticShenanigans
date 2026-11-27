@@ -1,5 +1,5 @@
-# Reads the config file (first command-line argument; default config.toml) and sets the paths. Output and figures go
-# to a folder named after the experiment, inside output_dir and figure_dir.
+# Reads the config file (first command-line argument; default config.toml) and the folders (paths.toml), and sets the
+# paths. Output and figures go to a folder named after the experiment, inside output_dir and figure_dir.
 # Included by setup.jl and by plotting scripts that don't need the grid.
 
 using Pkg
@@ -11,12 +11,21 @@ config_file = isempty(ARGS) ? joinpath(@__DIR__, "config.toml") : ARGS[1]
 config = TOML.parsefile(config_file)
 @info "Settings from $config_file" config
 
-data_dir   = config["paths"]["data_dir"]
+# The data, output and figure folders, the same for every config file: your own in paths_local.toml (a copy of
+# paths.toml, not in the repo), otherwise the defaults in paths.toml
+paths_file = joinpath(@__DIR__, isfile(joinpath(@__DIR__, "paths_local.toml")) ? "paths_local.toml" : "paths.toml")
+paths = TOML.parsefile(paths_file)["paths"]
+@info "Folders from $paths_file" paths
+haskey(config, "paths") &&
+    @warn "$config_file has a [paths] section, which is no longer read: the folders come from $paths_file"
+
+data_dir   = paths["data_dir"]
 dir_kw     = isempty(data_dir) ? (;) : (; dir = data_dir)
 experiment = get(config, "experiment", "")   # "" (or no setting): directly in output_dir and figure_dir
-output_dir = mkpath(joinpath(config["paths"]["output_dir"], experiment))   # model output
-figure_dir = mkpath(joinpath(config["paths"]["figure_dir"], experiment))   # figures and movies
+output_dir = mkpath(joinpath(paths["output_dir"], experiment))   # model output
+figure_dir = mkpath(joinpath(paths["figure_dir"], experiment))   # figures and movies
 run_config_file = joinpath(output_dir, "config.toml")   # copy of the config of the latest run, written by panarctic.jl
+run_paths_file  = joinpath(output_dir, "paths.toml")    # and of its folders
 
 # Output files, written by panarctic.jl and read by plotting/surface_movie.jl
 ocean_output_file   = joinpath(output_dir, "arctic_ocean.jld2")
