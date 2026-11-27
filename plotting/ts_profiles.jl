@@ -112,7 +112,7 @@ for set in region_set_names(validation)
                 for p in tsar, (n, y) in enumerate(p.dates)
                     parse(Int, y) in years || continue
                     lines!(ax, getfield(p, field)[:, r, n], p.level_depths; color = :darkgreen, linewidth = 2)
-                    entry!("observed $y (TSAR)", LineElement(color = :darkgreen, linewidth = 2))
+                    entry!("TSAR $y, annual mean", LineElement(color = :darkgreen, linewidth = 2))
                 end
             end
             if !isnothing(udash)
