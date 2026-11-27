@@ -9,8 +9,8 @@ profiles by region, and transports through the gateways.
 julia +1.13 --project=. analysis/compare_with_validation.jl config_myname.toml
 ```
 
-This computes whatever is missing (the datasets' diagnostics, the run's own) and writes the figures to `figure_dir`.
-The first time, it downloads WOA23 (about 75 GB transferred, 7 GB kept) and computes GLORYS for the run's days; after
+This is the only command you normally need. It computes whatever is missing (the datasets' diagnostics, the run's
+own) and writes the figures to `figure_dir`; what is already there is reused. The first time, it downloads WOA23 (about 75 GB transferred, 7 GB kept) and computes GLORYS for the run's days; after
 that, a new run of the same period only needs its own diagnostics. Set `validation_dir` (where datasets and their
 diagnostics go) in your `paths_local.toml` (see the main [README](../README.md)).
 
@@ -21,7 +21,31 @@ julia +1.13 --project=. analysis/compare_with_validation.jl config_a.toml config
 ```
 
 Each run gets its own figures as above, and the content and profile figures of all of them go to a folder `compare_<a>_<b>` in
-the figure folder. `--colors` (optional) sets the runs' colours, in the order of the config files.
+the figure folder. `--colors` (optional) sets the runs' colours, in the order of the config files. `--from 1993-01-01
+--to 1993-02-01` (optional) sets the period of the mean profiles; by default it is the runs' days.
+
+## What runs when
+
+`compare_with_validation.jl` runs these scripts, each only if its results are missing or out of date:
+
+| Step | Script | Computes | Kept in | Shared by |
+|---|---|---|---|---|
+| 1 | `analysis/validation_diagnostics.jl <dataset>` | a dataset's contents and profiles on its own grid (WOA23 once; GLORYS for the run's days, with its transports through the sections) | `<validation_dir>/<dataset>/` | all runs |
+| 2 | `analysis/ocean_diagnostics.jl config.toml` | the run's contents and profiles, from its daily averages | `diagnostics_dir` or `output_dir` | this run |
+| 3 | `plotting/*.jl config.toml` | the figures, from the saved results (nothing is recomputed) | `figure_dir` | |
+
+Each step is a script of its own, which can also be run alone, e.g. to compute GLORYS for a whole year ahead of a run
+in a CPU job, to redo only the figures, or to debug one dataset:
+
+```bash
+julia +1.13 --project=. analysis/validation_diagnostics.jl WOA23
+julia +1.13 --project=. analysis/validation_diagnostics.jl GLORYS --run config.toml   # or --from 1993-01-01 --to 1993-02-01
+julia +1.13 --project=. analysis/ocean_diagnostics.jl config.toml
+julia +1.13 --project=. plotting/ocean_content.jl config.toml
+julia +1.13 --project=. plotting/ts_profiles.jl config.toml
+julia +1.13 --project=. plotting/gateway_transports.jl config.toml
+julia +1.13 --project=. analysis/tsubouchi_comparison.jl config.toml
+```
 
 ## Datasets
 
@@ -73,19 +97,12 @@ dataset's grid. `julia +1.13 --project=. plotting/regions.jl config.toml` draws 
 - `<validation_dir>/GLORYS/transports/<key>/`: GLORYS's transports, a file per day, for one set of sections and reference
   values (described in its `sections.toml`).
 
-## Running the steps alone
+## Adding a dataset or a diagnostic
 
-```bash
-julia +1.13 --project=. analysis/validation_diagnostics.jl WOA23
-julia +1.13 --project=. analysis/validation_diagnostics.jl GLORYS --run config.toml   # or --from 1993-01-01 --to 1993-02-01
-julia +1.13 --project=. analysis/ocean_diagnostics.jl config.toml
-julia +1.13 --project=. plotting/ocean_content.jl config.toml
-julia +1.13 --project=. plotting/ts_profiles.jl config.toml
-julia +1.13 --project=. plotting/gateway_transports.jl config.toml
-julia +1.13 --project=. analysis/tsubouchi_comparison.jl config.toml
-```
+A new dataset or family of diagnostics has to be added to the scripts that run it; otherwise it is silently not
+computed or not drawn.
 
-## Adding a dataset
+For a new dataset:
 
 1. A reader in `validation/<dataset>.jl`. For a gridded dataset, a function that builds an Oceananigans grid of its
    cells and sets T and S for each period, then passes them to each family of `diagnostics/` (see `woa23.jl`).
@@ -93,3 +110,8 @@ julia +1.13 --project=. analysis/tsubouchi_comparison.jl config.toml
 3. A line for it in `analysis/validation_diagnostics.jl` (and in `analysis/compare_with_validation.jl`), and a row in
    the table above.
 4. Its lines in `plotting/ocean_content.jl` and `plotting/ts_profiles.jl`, read like GLORYS's or WOA23's.
+
+For a new family of diagnostics (e.g. sea ice): its computing file in `diagnostics/`, used for the run and for the
+datasets alike; its `analysis/` script for a run and its `plotting/` script; the readers of the datasets that give it;
+and the steps for it in `analysis/compare_with_validation.jl`. (A single list of the families, read by
+`compare_with_validation.jl` and `validation_diagnostics.jl`, is planned with the first new one.)
