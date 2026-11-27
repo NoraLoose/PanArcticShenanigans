@@ -57,6 +57,11 @@ For each segment, the cells to the right of its great circle and between its two
 marked cell and one to the left of the great circle are the faces the segment crosses, with sign +1 where the positive
 velocity points into the marked cell. Cells on the edge of the domain are never marked, so the domain edges are not
 section faces.
+
+Where two segments meet, their wedges can overlap by a cell, and both segments then count the same face (sign ±2).
+Each face is counted once: the signs are clamped to -1, 0, +1. (Without this, on the 15 km grid two faces of Fram
+Strait's section at the 10°E waypoint, in the West Spitsbergen Current, were counted twice, and Fram's southward
+transport came out -0.26 Sv instead of -2.14 Sv over Sep-Dec 2005.)
 """
 function section_faces(grid, lons, lats)
     grid = on_architecture(CPU(), grid)
@@ -91,7 +96,10 @@ function section_faces(grid, lons, lats)
         end
     end
 
-    return sᵘ, sᵛ
+    doubled = count(s -> abs(s) > 1, sᵘ) + count(s -> abs(s) > 1, sᵛ)
+    doubled > 0 && @info "Section through ($(first(lons))°E, $(first(lats))°N) … ($(last(lons))°E, $(last(lats))°N): " *
+                         "$doubled faces crossed by two segments where they meet, counted once"
+    return sign.(sᵘ), sign.(sᵛ)
 end
 
 # A face is open if it is not on or below the bathymetry. Only the immersed boundary counts, so the faces on the open
